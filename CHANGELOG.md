@@ -16,6 +16,18 @@ All notable changes to **🍕 ByTheSlice** are tracked here, slice by slice. The
 
 ---
 
+## [6.7.1] - 2026-11-18
+
+**The session-collision warning stops firing at sessions that claimed nothing.** A session making a workflow change with no claim was warned on nearly every Write and Edit that Slice 2.2 was being built by about 30 sessions, ended and long-idle chats included, and told to stop for a HITL.
+
+### Fixed
+
+- **No claim, no collision.** The write and commit check now runs only for a session tied to a pie (a `bts_claim`, a baker start, or a pie branch or worktree), never one charged with the checklist's next open pie (`runTarget` takes `fallback: false`).
+- **Edits are not claims.** The Pass tags every session's `edit`, `commit` and `push` rows with the checklist's active slice, so another session's rows now count for a slice only when that session claimed, started or verified it, holds the pie, or is on a branch of the pie.
+- **Ended and idle sessions leave the list.** A conflict lists only sessions that may still be on it: ended sessions, and idle ones quiet for over 24 hours, drop out unless git still holds their work (commits, an open PR, uncommitted files). The write check counts only sessions still running.
+- **Said once.** Each collision warning is given once per session, keyed by the work it names rather than its ages, instead of again at every check.
+- Tests: `mod/collision.test.ts` covers a session with no claim among 30 sessions tagged on the next open slice (no warning) and two live sessions claiming one slice (one warning, without the ended or 19-day-idle claimers).
+
 ## [6.7.0] - 2026-11-13
 
 **The kitchen viewer is now `/dashboard`.** The `open-kitchen` skill and command are renamed to `dashboard`; `/dashboard` opens the project's 3D kitchen and `/dashboard --lobby` opens the lobby, exactly as before.

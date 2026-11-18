@@ -240,3 +240,79 @@ test('/sell-slice 23.1 is not stopped by another session working only on 23.2', 
   // The whole-pie view still lists 23.2's branch, for a run that asks about the pie.
   expect(String((await $.tool.call({ tool: CLAIM_LISTED, pie: 23, goal: 'look' })).result)).toContain('Slice 23.2 already has commits on branch pie-23-s23.2-upload')
 })
+
+/** Git and gh with nothing past main anywhere: the only facts are the ledger and the sessions. */
+function cleanGit(world: World): void {
+  const run = world.run
+  world.run = argv => {
+    if (argv[0] === 'git' && argv[1] === 'log' && argv.includes('--source')) return { stdout: '' }
+    if (argv[0] === 'git' && argv[1] === 'for-each-ref') return { stdout: `refs/heads/main\t${MAIN_SHA}\t1\n` }
+    if (argv.join(' ') === 'git worktree list --porcelain') return { stdout: `worktree /repo\nHEAD ${MAIN_SHA}\nbranch refs/heads/main\n\n` }
+    if (argv[0] === 'gh') return { stdout: '[]' }
+    return run?.(argv)
+  }
+}
+
+const DAY = 24 * HOUR
+const collisionNotes = (ran: { context?: readonly string[] }) => (ran.context ?? []).filter(text => text.includes('session-collision'))
+
+test('a session with no claim gets no collision warning, however many sessions edited files while Slice 23.1 was next', async ($, on) => {
+  const { world, start } = incident(on)
+  // Pie 23 is the checklist's next open pie here, so the Pass tagged every session's rows with Slice 23.1.
+  world.checklist = `## Pie 22${PIE_23.split('## Pie 22')[1]}`
+  world.branch = 'main'
+  world.store = {}
+  cleanGit(world)
+  // Thirty other sessions on main that never claimed anything: the Pass tagged their edits and commits with the
+  // checklist's next open slice. Ten are running, ten ended, ten have been idle for 19 days.
+  const lines: string[] = []
+  for (let i = 0; i < 30; i++) {
+    const sid = `chat-${String(i).padStart(2, '0')}`
+    const t = i < 20 ? START_MS - HOUR : START_MS - 19 * DAY
+    lines.push(row(sid, t, 'edit', '23.1', { path: 'src/x.ts', agent: 'main', tool: 'Edit' }))
+    lines.push(row(sid, t + 1000, 'commit', '23.1', { sha: `${i}`.padEnd(40, '9'), branch: 'main' }))
+    if (i < 10) world.store[`strip:/repo:${sid}`] = { pie: 23, slice: '23.1', status: 'building', branch: 'main', t: START_MS - 60000 }
+    else if (i < 20) world.store[`strip-ended:/repo:${sid}`] = START_MS - 30 * 60000
+  }
+  world.files[LEDGER] = `${lines.join('\n')}\n`
+  on('tool.call', () => ({ result: 'edited' }))
+  await start($)
+  const first = await $.tool.call({ tool: 'Edit', file_path: '/repo/.github/workflows/ci.yml', old_string: 'a', new_string: 'b' })
+  expect(collisionNotes(first)).toEqual([])
+  const second = await $.tool.call({ tool: 'Write', file_path: '/repo/scripts/run.sh', content: 'echo' })
+  expect(collisionNotes(second)).toEqual([])
+  expect(rowsOf(world).some(r => r.ev === 'warn' && (r.data as Record<string, unknown>).code === 'session-collision')).toBe(false)
+  expect((await status($)).includes('Other work on Pie 23')).toBe(false)
+})
+
+test('two live sessions that both claim one slice still get the warning, once, without ended or long-idle sessions', async ($, on) => {
+  const { world, clock, start } = incident(on)
+  world.branch = 'main'
+  world.store = {}
+  cleanGit(world)
+  world.files[LEDGER] = `${[
+    // This session holds the pie; chat-c, still running, claimed its first slice.
+    row(SESSION, START_MS - 2 * HOUR, 'claim', null, { branch: 'main', worktree: '/repo', goal: 'bake Pie 23' }),
+    row('chat-c', START_MS - HOUR, 'claim', '23.1', { branch: 'main', worktree: '/elsewhere', goal: 'media kinds' }),
+    // A claim from a session that ended, and one from a chat idle for 19 days: neither is on the list.
+    row('chat-gone', START_MS - 2 * HOUR, 'claim', '23.1', { branch: 'main', worktree: '/gone' }),
+    row('chat-old', START_MS - 19 * DAY, 'claim', '23.1', { branch: 'main', worktree: '/old' }),
+  ].join('\n')}\n`
+  world.store['strip:/repo:chat-c'] = { pie: 23, slice: '23.1', status: 'building', branch: 'main', t: START_MS - 60000 }
+  world.store['strip-ended:/repo:chat-gone'] = START_MS - HOUR
+  on('tool.call', () => ({ result: 'edited' }))
+  await start($)
+  const first = await $.tool.call({ tool: 'Edit', file_path: '/repo/src/media.ts', old_string: 'a', new_string: 'b' })
+  const notes = collisionNotes(first)
+  expect(notes).toHaveLength(1)
+  expect(notes[0]).toContain('other work is already on Pie 23: (Slice 23.1 is also being built by another session (chat-c) on branch main')
+  expect(notes[0]?.includes('chat-gone')).toBe(false)
+  expect(notes[0]?.includes('chat-old')).toBe(false)
+  expect(notes[0]?.includes('sessions on it')).toBe(false)
+  // Past the half hour the work is read again, but the same warning is not said twice.
+  await clock.advance(31 * 60000)
+  world.store['strip:/repo:chat-c'] = { pie: 23, slice: '23.1', status: 'building', branch: 'main', t: START_MS + 30 * 60000 }
+  const again = await $.tool.call({ tool: 'Edit', file_path: '/repo/src/media.ts', old_string: 'b', new_string: 'c' })
+  expect(collisionNotes(again)).toEqual([])
+  expect(rowsOf(world).filter(r => r.ev === 'warn' && (r.data as Record<string, unknown>).code === 'session-collision')).toHaveLength(1)
+})
