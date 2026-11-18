@@ -29,7 +29,7 @@ After the operator answers:
 
 ## Checked again at the first write
 
-A session that resumes from a plain message, without a new `/sell-pie` or `/sell-slice`, is checked before its first file write or commit (then at most every 30 minutes). The facts come back with that tool's result: stop and raise the same HITL before writing more. A session that holds the slice and already has work on it is the one building, and is not stopped by its own check.
+A session that resumes from a plain message, without a new `/sell-pie` or `/sell-slice`, is checked before its first file write or commit (then at most every 30 minutes). The facts come back with that tool's result: stop and raise the same HITL before writing more. A session that holds the slice and already has work on it is the one building, and is not stopped by its own check. Only a session tied to a pie is checked (a claim, a start or a pie branch): one that claimed nothing, such as a workflow change with no special order, is never charged with the checklist's next open pie. This check counts only other sessions still running, and says each warning once per session.
 
 ## Seeing the whole project
 

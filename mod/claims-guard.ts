@@ -7,6 +7,7 @@ import type { EngineInterface } from 'claude-code'
 import {
   GATE_STEP,
   checkScope,
+  collisionKey,
   collisionLines,
   collisionsFor,
   holdsClaim,
@@ -37,6 +38,8 @@ const BAKERS = /(^|:)(sell-pie|sell-slice)$/
 const COMMIT = /\bgit\b(?:\s+-C\s+\S+)?[^;&|]*\bcommit\b/
 
 const guarded = new Map<string, number>()
+// The collision warnings this session was already given, by what they are about (not their ages): each is said once.
+const said = new Set<string>()
 let lastCheck = Number.NEGATIVE_INFINITY
 // A Skill tool call's arguments, held while it runs: its nested skill prompt fires before the call returns.
 let pending: { skill: string; arg: unknown } | null = null
@@ -74,11 +77,11 @@ export function bakerSkill(name: unknown): 'sell-pie' | 'sell-slice' | null {
 }
 
 /** The finding other work reports: the facts, one per line, and the step to take. Pure. */
-export function collisionFinding(pie: number, lines: readonly string[], slice?: string | null, agentId: string | null = null): Finding {
+export function collisionFinding(pie: number, lines: readonly string[], slice?: string | null, agentId: string | null = null, about?: string): Finding {
   return {
     code: COLLISION_CODE,
     // Keyed by loop too, so a teammate starting on the same pie within the minute still gets its own note.
-    key: `${pie}:${agentId ?? 'main'}:${lines.join('|')}`,
+    key: `${pie}:${agentId ?? 'main'}:${about ?? lines.join('|')}`,
     ...(slice === undefined || slice === null ? {} : { slice }),
     text: `other work is already on Pie ${pie}: ${lines.map(line => `(${line})`).join(' ')}. ${GATE_STEP}`,
   }
@@ -138,7 +141,11 @@ export async function guardStart(
   }
   guarded.set(key, now)
   lastCheck = now
-  if (lines.length > 0 && (await checksOn($)) !== null) await reportToModel($, [collisionFinding(target.pie, lines, target.slice, agentId)], agentId)
+  const about = `${agentId ?? 'main'}|${collisionKey(found)}`
+  if (lines.length > 0 && !said.has(about) && (await checksOn($)) !== null) {
+    said.add(about)
+    await reportToModel($, [collisionFinding(target.pie, lines, target.slice, agentId, about)], agentId)
+  }
   return { lines }
 }
 
@@ -148,9 +155,13 @@ export const isCommit = (command: unknown): boolean => typeof command === 'strin
 /**
  * Before a file write or a commit: once per half hour of work, reads the other
  * work on the pie this session is on and returns it as a finding the tool
- * result carries. Skipped while this session holds the slice and has work on
- * it (it is the one already building). Resolves no findings outside a
- * ByTheSlice project, with checks off, or when nothing else is there.
+ * result carries. Only a session tied to a pie is checked (it claimed the pie
+ * or a slice, started one, or is on a pie branch): one with no claim is never
+ * charged with the checklist's next open pie. Only another session still
+ * running counts here, and the same warning is given once per session.
+ * Skipped while this session holds the slice and has work on it (it is the
+ * one already building). Resolves no findings outside a ByTheSlice project,
+ * with checks off, or when nothing else is there.
  */
 export async function guardWork($: EngineInterface): Promise<Finding[]> {
   if ((await checksOn($)) === null) return []
@@ -161,10 +172,15 @@ export async function guardWork($: EngineInterface): Promise<Finding[]> {
   const branch = await read($, branchAtom).catch(() => null)
   const world = await readElsewhere($, branch === null ? {} : { branch })
   lastCheck = now
-  const target = runTarget(c, { branch: world.self.branch, rows: world.rows, sid: world.self.sid })
+  const target = runTarget(c, { branch: world.self.branch, rows: world.rows, sid: world.self.sid, fallback: false })
   if (target === null || holdsWork(world.rows, world.self.sid, target.pie, target.slice)) return []
-  const lines = collisionLines(collisionsFor(world, target.pie, checkScope(c, world.rows, world.self.sid, target)), world.now)
-  return lines.length === 0 ? [] : [collisionFinding(target.pie, lines, target.slice)]
+  const all = collisionsFor(world, target.pie, checkScope(c, world.rows, world.self.sid, target))
+  const found = { ...all, conflicts: all.conflicts.filter(party => party.liveness === 'live' || party.liveness === 'stale') }
+  const lines = collisionLines(found, world.now)
+  const about = `main|${collisionKey(found)}`
+  if (lines.length === 0 || said.has(about)) return []
+  said.add(about)
+  return [collisionFinding(target.pie, lines, target.slice, null, about)]
 }
 
 /** Serves bts_claim from the checklist atom (read once more when it is empty). */
@@ -180,6 +196,7 @@ export async function serveClaimTool($: EngineInterface, input: Record<string, u
 export function resetClaims(): void {
   resetSources()
   guarded.clear()
+  said.clear()
   pending = null
   lastCheck = Number.NEGATIVE_INFINITY
 }

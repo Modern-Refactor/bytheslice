@@ -16,6 +16,8 @@ import type { PassChecklist } from './types'
 export const CLAIM_STALE_MS = 6 * 60 * 60 * 1000
 /** Rows with nothing to point at (no branch, commit or PR) older than this are history, whoever wrote them. */
 export const HISTORY_MS = 7 * 24 * 60 * 60 * 1000
+/** A session with no running process seen and no activity for longer than this leaves the conflict list, unless git still holds its work. */
+export const IDLE_CUTOFF_MS = 24 * 60 * 60 * 1000
 /** Why a session lets go of a claim. `done` keeps its work visible until it reaches the default branch. */
 export const RELEASE_REASONS = ['done', 'deferred', 'abandoned'] as const
 export type ReleaseReason = (typeof RELEASE_REASONS)[number]
@@ -117,6 +119,9 @@ const SLICE_ID = /^\d+\.\d+$/
  * bookkeeping (`usage` after a turn, `slice.rollup` after a flip), which follows a release in the same turn.
  */
 const WORK_EVENTS: ReadonlySet<string> = new Set(['pie.started', 'slice.started', 'claim', 'commit', 'push', 'merge', 'verdict', 'slice.done', 'edit'])
+// The rows that tie a session to a slice. An edit, commit or push row carries the checklist's active slice for any
+// session, claimed or not, so on its own it says nothing about which slice that session is on.
+const TIE_EVENTS: ReadonlySet<string> = new Set(['claim', 'slice.started', 'verdict'])
 const RANK: Record<Liveness, number> = { live: 3, stale: 2, idle: 1, ended: 0 }
 
 /** A ref's short branch name: `refs/heads/x` and `refs/remotes/origin/x` both read `x`. Pure. */
@@ -209,6 +214,8 @@ type SidWork = {
   /** It started the pie with /sell-pie (`pie.started`), which holds the pie only with a branch of that pie. */
   pieStarted: boolean
   claimed: boolean
+  /** Slices it claimed, started or had verified: the slices its other rows can count for. */
+  tied: Set<string>
   branch: string | null
   branchT: number
   worktree: string | null
@@ -268,7 +275,7 @@ export function collisionsFor(world: Elsewhere, pie: number, open: readonly stri
     if (row.sid === world.self.sid || (!WORK_EVENTS.has(row.ev) && row.ev !== 'release')) continue
     let work = bySid.get(row.sid)
     if (!work) {
-      work = { sid: row.sid, slices: new Map(), pieWork: Number.NEGATIVE_INFINITY, pieDrop: Number.NEGATIVE_INFINITY, pieClaim: false, pieStarted: false, claimed: false, branch: null, branchT: Number.NEGATIVE_INFINITY, worktree: null, goal: null, goalT: Number.NEGATIVE_INFINITY, done: new Set() }
+      work = { sid: row.sid, slices: new Map(), pieWork: Number.NEGATIVE_INFINITY, pieDrop: Number.NEGATIVE_INFINITY, pieClaim: false, pieStarted: false, claimed: false, tied: new Set(), branch: null, branchT: Number.NEGATIVE_INFINITY, worktree: null, goal: null, goalT: Number.NEGATIVE_INFINITY, done: new Set() }
       bySid.set(row.sid, work)
     }
     if (branch !== null && row.t >= work.branchT) {
@@ -306,6 +313,7 @@ export function collisionsFor(world: Elsewhere, pie: number, open: readonly stri
       slice.lastCommit = Math.max(slice.lastCommit, row.t)
     }
     if (row.ev === 'slice.done') work.done.add(row.slice)
+    if (TIE_EVENTS.has(row.ev)) work.tied.add(row.slice)
     work.slices.set(row.slice, slice)
   }
 
@@ -339,11 +347,15 @@ export function collisionsFor(world: Elsewhere, pie: number, open: readonly stri
     if (t !== null && Number.isFinite(t)) party.lastT = party.lastT === null ? t : Math.max(party.lastT, t)
   }
 
-  // Source 1: other sessions' ledger rows and claims.
+  // Source 1: other sessions' ledger rows and claims. A slice counts only for a session tied to it: it claimed,
+  // started or verified that slice, holds the pie, or is on a branch of the pie. A session that merely edited files
+  // while the checklist's next open slice was this one is not on it.
   for (const work of bySid.values()) {
     const live: string[] = []
+    const onPie = work.pieClaim || branchPie(work.branch) === pie
     for (const [id, slice] of work.slices) {
       if (slice.lastWork === Number.NEGATIVE_INFINITY) continue
+      if (!onPie && !work.tied.has(id)) continue
       if (slice.lastDrop >= slice.lastWork || work.pieDrop >= slice.lastWork) continue
       // Settled only when every commit it recorded reached the default branch, not when one did, and nothing
       // (a fresh claim, an edit) came after its last commit: merged commits cover only the work before them.
@@ -458,8 +470,23 @@ export function collisionsFor(world: Elsewhere, pie: number, open: readonly stri
     const unlocated = party.branch === null && party.commits === 0 && party.pr === null
     const sameTree = unlocated && party.worktree !== null && party.worktree === world.self.worktree
     const history = unlocated && (party.liveness === 'ended' || (party.lastT !== null && world.now - party.lastT > HISTORY_MS))
-    if ((onOwn || sameTree || history) && party.liveness !== 'live') handoffs.push(party)
-    else conflicts.push(party)
+    if ((onOwn || sameTree || history) && party.liveness !== 'live') {
+      handoffs.push(party)
+      continue
+    }
+    // A conflict lists only sessions that may still be on it: ended ones, and idle ones quiet past the cutoff, leave
+    // the list unless git still holds the work (commits, an open PR, uncommitted files), whose line then says so.
+    const gitHeld = party.commits > 0 || party.pr !== null || (party.dirty ?? 0) > 0
+    if (!gitHeld && party.sids.length > 0) {
+      const around = party.sids.filter(sid => {
+        const lastT = lastBySid.get(sid) ?? party.lastT
+        const liveness = livenessOf(sid, lastT, world)
+        return liveness === 'live' || liveness === 'stale' || (liveness === 'idle' && lastT !== null && world.now - lastT <= IDLE_CUTOFF_MS)
+      })
+      if (around.length === 0) continue
+      party.sids = around
+    }
+    conflicts.push(party)
   }
   const order = (a: Party, b: Party) => (b.lastT ?? 0) - (a.lastT ?? 0)
   conflicts.sort(order)
@@ -534,6 +561,12 @@ export function handoffLine(party: Party, now: number): string {
 /** What a session does about conflicts before it cuts a branch or writes code. */
 export const GATE_STEP =
   'Before cutting a branch or writing code, raise a destructive_operation HITL with bts_hitl carrying these facts, ask the operator in chat, and stop. Once they say to go ahead, call bts_claim with over: true.'
+
+/** What one warning is about, without its ages: the same work keys the same, so a session is told once. Pure. */
+export function collisionKey(found: Collisions): string {
+  const parties = found.conflicts.map(party => `${party.key}@${party.slices.join(',')}${party.pieLevel ? '*' : ''}`).sort()
+  return `${found.pie}:${parties.join('|')}${found.delivery === null ? '' : `|delivery:${found.delivery}`}`
+}
 
 /** The lines bts_status, bts_claim and the skill start print for one pie. Pure. */
 export function collisionLines(found: Collisions, now: number): string[] {
@@ -797,12 +830,13 @@ export function parseRunArg(arg: unknown): { pie: number; slice: string | null }
  * The pie and slice this run is on, not merely the first open one: the run's
  * argument, else the checked-out branch (`pie-N-sN.M-*` or `pie-N-*`), else
  * this session's latest claim still held, else its latest `slice.started`,
- * else the checklist's active pie. A slice left unnamed is the pie's first
- * open slice. Null when the checklist has no such pie. Pure.
+ * else the checklist's active pie (unless `fallback` is false: a session with
+ * no claim and no pie branch is then on nothing). A slice left unnamed is the
+ * pie's first open slice. Null when the checklist has no such pie. Pure.
  */
 export function runTarget(
   c: PassChecklist | null,
-  facts: { arg?: unknown; branch: string | null; rows: readonly LedgerRow[]; sid: string },
+  facts: { arg?: unknown; branch: string | null; rows: readonly LedgerRow[]; sid: string; fallback?: boolean },
 ): { pie: number; slice: string | null } | null {
   const known = (pie: number) => c?.pies.find(x => x.n === pie) ?? null
   const firstOpen = (pie: number) => known(pie)?.slices.find(s => !s.done)?.id ?? null
@@ -839,6 +873,7 @@ export function runTarget(
     const hit = fill(latest.pie, latest.slice ?? null)
     if (hit) return hit
   }
+  if (facts.fallback === false) return null
   const pie = activePie(c)
   return pie ? { pie: pie.n, slice: firstOpen(pie.n) } : null
 }
