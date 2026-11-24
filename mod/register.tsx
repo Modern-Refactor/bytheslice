@@ -123,7 +123,7 @@ export const register: Register = on => {
     const findings = [
       ...(await checkFileWrite($, e).catch(() => [])),
       // Other work on the pie, checked at the first write of a stretch of work (a resumed session included).
-      ...(isChecklistPath(e.file_path) ? [] : await guardWork($).catch(() => [])),
+      ...(isChecklistPath(e.file_path) ? [] : await guardWork($, { path: e.file_path }).catch(() => [])),
     ]
     const ran = await next(e)
     if (isChecklistPath(e.file_path)) {

@@ -14,6 +14,7 @@ import {
   holdsWork,
   openSlices,
   readElsewhere,
+  shortBranch,
   resetClaims as resetSources,
   runTarget,
   serveClaim,
@@ -21,7 +22,7 @@ import {
 } from './claims.ts'
 import { checksOn, reportToModel } from './checks.ts'
 import type { Finding } from './checks.ts'
-import { isLimited, refresh } from './projection.ts'
+import { branchPie, isLimited, refresh } from './projection.ts'
 import type { PassChecklist } from './types'
 
 const checklistAtom = atom({ plugin: 'bytheslice', key: 'pass.checklist' } as const, null)
@@ -35,7 +36,9 @@ export const GUARD_WINDOW_MS = 30000
 export const WORK_CHECK_MS = 30 * 60 * 1000
 
 const BAKERS = /(^|:)(sell-pie|sell-slice)$/
-const COMMIT = /\bgit\b(?:\s+-C\s+\S+)?[^;&|]*\bcommit\b/
+// `git commit` as a command of its own: at the start of a command or after a separator, past env assignments and
+// git's own options. A `commit` word inside another command's text (a PR body, an echo) is not one.
+const COMMIT = /(?:^|[;&|(\n]|\$\()\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*git(?:\s+-[Cc]\s+\S+|\s+--[^\s=]+(?:=\S+)?)*\s+commit\b/
 
 const guarded = new Map<string, number>()
 // The collision warnings this session was already given, by what they are about (not their ages): each is said once.
@@ -159,12 +162,16 @@ export const isCommit = (command: unknown): boolean => typeof command === 'strin
  * or a slice, started one, or is on a pie branch): one with no claim is never
  * charged with the checklist's next open pie. Only another session still
  * running counts here, and the same warning is given once per session.
- * Skipped while this session holds the slice and has work on it (it is the
- * one already building). Resolves no findings outside a ByTheSlice project,
- * with checks off, or when nothing else is there.
+ * Only a call that touches the pie is checked: a file write inside this
+ * session's worktree (a PR body in a scratch folder is not), on the default
+ * branch or a branch of that pie (work on `feat/x` while holding a Pie 24
+ * claim is not Pie 24's). Skipped while this session holds the slice and has
+ * work on it (it is the one already building). Resolves no findings outside a
+ * ByTheSlice project, with checks off, or when nothing else is there.
  */
-export async function guardWork($: EngineInterface): Promise<Finding[]> {
+export async function guardWork($: EngineInterface, opts: { path?: unknown } = {}): Promise<Finding[]> {
   if ((await checksOn($)) === null) return []
+  if (opts.path !== undefined && !(await insideWorktree($, opts.path))) return []
   const now = await nowOf($)
   if (now - lastCheck < WORK_CHECK_MS) return []
   const c = await checklistOf($)
@@ -174,6 +181,7 @@ export async function guardWork($: EngineInterface): Promise<Finding[]> {
   lastCheck = now
   const target = runTarget(c, { branch: world.self.branch, rows: world.rows, sid: world.self.sid, fallback: false })
   if (target === null || holdsWork(world.rows, world.self.sid, target.pie, target.slice)) return []
+  if (!onPieBranch(world.self.branch, world.base?.base ?? null, target.pie)) return []
   const all = collisionsFor(world, target.pie, checkScope(c, world.rows, world.self.sid, target))
   const found = { ...all, conflicts: all.conflicts.filter(party => party.liveness === 'live' || party.liveness === 'stale') }
   const lines = collisionLines(found, world.now)
@@ -181,6 +189,30 @@ export async function guardWork($: EngineInterface): Promise<Finding[]> {
   if (lines.length === 0 || said.has(about)) return []
   said.add(about)
   return [collisionFinding(target.pie, lines, target.slice, null, about)]
+}
+
+/** Whether a file path is inside this session's worktree (a relative one always is). */
+async function insideWorktree($: EngineInterface, path: unknown): Promise<boolean> {
+  if (typeof path !== 'string' || path === '') return true
+  if (!path.startsWith('/')) return true
+  let cwd: string
+  try {
+    cwd = await $.session.cwd()
+  } catch {
+    return true
+  }
+  const root = cwd.replace(/\/+$/, '')
+  return path === root || path.startsWith(`${root}/`)
+}
+
+/**
+ * Whether work on `branch` is work on `pie`: a branch of that pie, the default
+ * branch, a detached HEAD, or no git at all. Any other branch is other work. Pure.
+ */
+export function onPieBranch(branch: string | null, base: string | null, pie: number): boolean {
+  if (branch === null || branch === 'HEAD' || base === null) return true
+  const short = shortBranch(branch)
+  return short === shortBranch(base) || branchPie(short) === pie
 }
 
 /** Serves bts_claim from the checklist atom (read once more when it is empty). */

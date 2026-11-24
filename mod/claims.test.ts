@@ -187,9 +187,11 @@ test('an ended session whose only claim was the pie leaves nothing behind', () =
   expect(collisionsFor(world({ rows, ended: { gone: NOW - 29 * HOUR } }), 7, OPEN).conflicts).toEqual([])
 })
 
-test('merge-per-slice flags a run on one pie branch, its own or another', () => {
+test('merge-per-slice flags a run on one pie branch: its own apart, never as a collision', () => {
   const mine = collisionsFor(world({ mode: 'merge-per-slice', self: { sid: 'me', branch: 'pie-7-everything', worktree: '/repo' } }), 7, OPEN)
-  expect(mine.delivery).toBe('delivery.mode is merge-per-slice (one branch and PR per slice), but this session is on one pie branch, pie-7-everything, for Pie 7')
+  expect(mine.delivery).toBeNull()
+  expect(mine.ownDelivery).toBe('delivery.mode is merge-per-slice (one branch and PR per slice), but this session is on one pie branch, pie-7-everything, for Pie 7')
+  expect(collisionLines(mine, NOW)).toEqual([])
   expect(collisionsFor(world({ mode: 'pie-pr', self: { sid: 'me', branch: 'pie-7-everything', worktree: '/repo' } }), 7, OPEN).delivery).toBeNull()
   expect(collisionsFor(world({ mode: 'merge-per-slice' }), 7, OPEN).delivery).toBeNull()
 })

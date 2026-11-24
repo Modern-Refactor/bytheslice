@@ -106,8 +106,13 @@ export type Party = {
   sliceSids: Record<string, string[]>
 }
 
-/** What the fold found for one pie: other work that conflicts, work this session continues, and a delivery-mode mismatch. */
-export type Collisions = { pie: number; conflicts: Party[]; handoffs: Party[]; delivery: string | null }
+/**
+ * What the fold found for one pie: other work that conflicts, work this
+ * session continues, and a delivery-mode mismatch: `delivery` when another
+ * run's pie branch is the conflict, `ownDelivery` when this session itself is
+ * on one pie branch (a run override may have chosen it; never a collision).
+ */
+export type Collisions = { pie: number; conflicts: Party[]; handoffs: Party[]; delivery: string | null; ownDelivery?: string }
 
 const SLICE_BRANCH = /(^|\/)pie[-/]\d+[-/]s\d+\.\d+/
 const SLICE_OF_BRANCH = /(^|\/)pie[-/]\d+[-/]s(\d+\.\d+)/
@@ -492,16 +497,18 @@ export function collisionsFor(world: Elsewhere, pie: number, open: readonly stri
   conflicts.sort(order)
   handoffs.sort(order)
 
+  // A mismatch is other work only on another run's branch. This session's own pie branch is its own choice (an
+  // explicit run override can ask for one pie branch): it is reported apart, never as a collision.
   let delivery: string | null = null
+  let ownDelivery: string | null = null
   if (world.mode === 'merge-per-slice') {
+    const words = (who: string, branch: string) => `delivery.mode is merge-per-slice (one branch and PR per slice), but ${who} one pie branch, ${branch}, for Pie ${pie}`
     const mine = world.self.branch !== null && branchPie(world.self.branch) === pie && isPieBranch(world.self.branch) ? world.self.branch : null
     const theirs = conflicts.find(x => x.pieBranch && x.slices.length >= 2)?.branch ?? null
-    const branch = mine ?? theirs
-    if (branch !== null) {
-      delivery = `delivery.mode is merge-per-slice (one branch and PR per slice), but ${mine ? 'this session is on' : 'another run used'} one pie branch, ${branch}, for Pie ${pie}`
-    }
+    if (theirs !== null) delivery = words('another run used', theirs)
+    if (mine !== null) ownDelivery = words('this session is on', mine)
   }
-  return { pie, conflicts, handoffs, delivery }
+  return { pie, conflicts, handoffs, delivery, ...(ownDelivery === null ? {} : { ownDelivery }) }
 }
 
 /** An age as `just now`, `12 min ago`, `5 h ago` or `3 d ago`. Pure. */
@@ -568,8 +575,13 @@ export function collisionKey(found: Collisions): string {
   return `${found.pie}:${parties.join('|')}${found.delivery === null ? '' : `|delivery:${found.delivery}`}`
 }
 
-/** The lines bts_status, bts_claim and the skill start print for one pie. Pure. */
+/**
+ * The lines bts_status, bts_claim and the skill start print for one pie: none
+ * unless another session, branch or open PR is on it; a delivery-mode mismatch
+ * only adds to that, and this session's own (`ownDelivery`) never shows here. Pure.
+ */
 export function collisionLines(found: Collisions, now: number): string[] {
+  if (found.conflicts.length === 0) return []
   const lines = found.conflicts.map(party => conflictLine(party, now))
   if (found.delivery !== null) lines.push(found.delivery)
   return lines

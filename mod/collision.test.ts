@@ -3,6 +3,7 @@
 
 import { expect, test } from 'claude-code/testing'
 
+import { isCommit } from './claims-guard.ts'
 import { CONFIG, LEDGER, SESSION, START_MS, engineLoops, rowsOf, stage, status } from './testing.tsx'
 import type { World } from './testing.tsx'
 
@@ -315,4 +316,64 @@ test('two live sessions that both claim one slice still get the warning, once, w
   const again = await $.tool.call({ tool: 'Edit', file_path: '/repo/src/media.ts', old_string: 'b', new_string: 'c' })
   expect(collisionNotes(again)).toEqual([])
   expect(rowsOf(world).filter(r => r.ev === 'warn' && (r.data as Record<string, unknown>).code === 'session-collision')).toHaveLength(1)
+})
+
+test('a session on its own pie branch under merge-per-slice is not a collision: no warning, an uncontested claim, one Delivery line', async ($, on) => {
+  const { world, clock, start } = incident(on)
+  const OWN = 'pie-23-everything'
+  world.branch = OWN
+  world.store = {}
+  cleanGit(world)
+  // This session claimed Pie 23 on one pie branch on purpose (a run override); nobody else is on the pie.
+  world.files[LEDGER] = `${row(SESSION, START_MS - 10 * DAY, 'claim', null, { branch: OWN, worktree: '/repo', goal: 'one pie branch, one PR' })}\n`
+  on('tool.call', () => ({ result: 'done' }))
+  await start($)
+  const wrote = await $.tool.call({ tool: 'Write', file_path: '/repo/src/domains.ts', content: 'x' })
+  expect(collisionNotes(wrote)).toEqual([])
+  await clock.advance(31 * 60000)
+  const committed = await $.tool.call({ tool: 'Bash', command: 'git commit -m "feat(pie-23): 23.2 task 1 warming"' })
+  expect(collisionNotes(committed)).toEqual([])
+  expect(rowsOf(world).some(r => r.ev === 'warn' && (r.data as Record<string, unknown>).code === 'session-collision')).toBe(false)
+  const text = await status($)
+  expect(text.includes('Other work on Pie 23')).toBe(false)
+  expect(text).toContain(`Delivery: delivery.mode is merge-per-slice (one branch and PR per slice), but this session is on one pie branch, ${OWN}, for Pie 23`)
+  const claim = String((await $.tool.call({ tool: CLAIM_LISTED, slice: '23.2', goal: 'warming' })).result)
+  expect(claim.startsWith(`claimed Slice 23.2 on branch ${OWN}; no other session, branch or open PR is on it`)).toBe(true)
+})
+
+test('only calls that touch the pie are checked: not another branch, not a file outside the worktree', async ($, on) => {
+  const { world, clock, start } = incident(on)
+  world.store = {}
+  cleanGit(world)
+  // This session holds Pie 23 and chat-c, still running, claims 23.1: a real collision, on the pie's own work.
+  world.files[LEDGER] = `${[
+    row(SESSION, START_MS - 2 * HOUR, 'claim', null, { branch: 'main', worktree: '/repo' }),
+    row('chat-c', START_MS - HOUR, 'claim', '23.1', { branch: 'main', worktree: '/elsewhere' }),
+  ].join('\n')}\n`
+  world.store['strip:/repo:chat-c'] = { pie: 23, slice: '23.1', status: 'building', branch: 'main', t: START_MS - 60000 }
+  on('tool.call', () => ({ result: 'done' }))
+  // A merge on another feature branch is not Pie 23's work.
+  world.branch = 'feat/unified-content-gallery'
+  await start($)
+  expect(collisionNotes(await $.tool.call({ tool: 'Edit', file_path: '/repo/src/gallery.ts', old_string: 'a', new_string: 'b' }))).toEqual([])
+  expect(collisionNotes(await $.tool.call({ tool: 'Bash', command: 'git commit --no-edit' }))).toEqual([])
+  // Back on main: a PR body written outside the worktree is not checked, an edit inside it is.
+  world.branch = 'main'
+  await $.tool.call({ tool: 'Bash', command: 'git switch main' })
+  await clock.advance(31 * 60000)
+  expect(collisionNotes(await $.tool.call({ tool: 'Write', file_path: '/tmp/pr-body.md', content: 'Pie 30' }))).toEqual([])
+  const inside = collisionNotes(await $.tool.call({ tool: 'Edit', file_path: '/repo/src/media.ts', old_string: 'a', new_string: 'b' }))
+  expect(inside).toHaveLength(1)
+  expect(inside[0]).toContain('Slice 23.1 is also being built by another session (chat-c)')
+})
+
+test('a commit is git commit as a command of its own, not the word inside another command', () => {
+  expect(isCommit('git commit -m "x"')).toBe(true)
+  expect(isCommit('cd app && git -C /repo commit --amend --no-edit')).toBe(true)
+  expect(isCommit('GIT_AUTHOR_DATE=now git --no-pager commit -m x')).toBe(true)
+  expect(isCommit('git add -A\ngit commit -m x')).toBe(true)
+  expect(isCommit('gh pr create --body "squash: git log, then commit the fix"')).toBe(false)
+  expect(isCommit('git push origin HEAD # after the commit')).toBe(false)
+  expect(isCommit('echo "git commit"')).toBe(false)
+  expect(isCommit('git log --format=%s | grep commit')).toBe(false)
 })

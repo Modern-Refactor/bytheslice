@@ -29,7 +29,7 @@ After the operator answers:
 
 ## Checked again at the first write
 
-A session that resumes from a plain message, without a new `/sell-pie` or `/sell-slice`, is checked before its first file write or commit (then at most every 30 minutes). The facts come back with that tool's result: stop and raise the same HITL before writing more. A session that holds the slice and already has work on it is the one building, and is not stopped by its own check. Only a session tied to a pie is checked (a claim, a start or a pie branch): one that claimed nothing, such as a workflow change with no special order, is never charged with the checklist's next open pie. This check counts only other sessions still running, and says each warning once per session.
+A session that resumes from a plain message, without a new `/sell-pie` or `/sell-slice`, is checked before its first file write or commit (then at most every 30 minutes). The facts come back with that tool's result: stop and raise the same HITL before writing more. A session that holds the slice and already has work on it is the one building, and is not stopped by its own check. Only a session tied to a pie is checked (a claim, a start or a pie branch): one that claimed nothing, such as a workflow change with no special order, is never charged with the checklist's next open pie. This check counts only other sessions still running, looks only at calls that touch the pie (a file in the session's worktree, on the default branch or a branch of that pie), and says each warning once per session. A session's own pie branch under `merge-per-slice` is not a collision: `bts_status` shows it as a `Delivery:` line.
 
 ## Seeing the whole project
 
