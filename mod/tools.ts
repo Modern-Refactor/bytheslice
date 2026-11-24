@@ -294,6 +294,8 @@ export function statusReport(
     if (other.length > 4) lines.push(`  and ${other.length - 4} more (bts_claim lists them all)`)
   }
   if (found && found.handoffs.length > 0) for (const party of found.handoffs.slice(0, 2)) lines.push(`Handoff: ${handoffLine(party, now)}`)
+  // This session's own pie branch under merge-per-slice: a fact about its run, not other work.
+  if (found?.ownDelivery) lines.push(`Delivery: ${found.ownDelivery} (this session's own choice, perhaps a run override; not a collision)`)
   // Other work on the pie comes first: the projection folds every session's rows, so its own status may be theirs.
   lines.push(
     `Next: ${

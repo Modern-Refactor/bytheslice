@@ -187,9 +187,11 @@ test('an ended session whose only claim was the pie leaves nothing behind', () =
   expect(collisionsFor(world({ rows, ended: { gone: NOW - 29 * HOUR } }), 7, OPEN).conflicts).toEqual([])
 })
 
-test('merge-per-slice flags a run on one pie branch, its own or another', () => {
+test('merge-per-slice flags a run on one pie branch: its own apart, never as a collision', () => {
   const mine = collisionsFor(world({ mode: 'merge-per-slice', self: { sid: 'me', branch: 'pie-7-everything', worktree: '/repo' } }), 7, OPEN)
-  expect(mine.delivery).toBe('delivery.mode is merge-per-slice (one branch and PR per slice), but this session is on one pie branch, pie-7-everything, for Pie 7')
+  expect(mine.delivery).toBeNull()
+  expect(mine.ownDelivery).toBe('delivery.mode is merge-per-slice (one branch and PR per slice), but this session is on one pie branch, pie-7-everything, for Pie 7')
+  expect(collisionLines(mine, NOW)).toEqual([])
   expect(collisionsFor(world({ mode: 'pie-pr', self: { sid: 'me', branch: 'pie-7-everything', worktree: '/repo' } }), 7, OPEN).delivery).toBeNull()
   expect(collisionsFor(world({ mode: 'merge-per-slice' }), 7, OPEN).delivery).toBeNull()
 })
@@ -300,16 +302,21 @@ test('squash-merged work counts as merged: a merged PR of its branch, a base sub
   })
 })
 
-test('a party keeps every session on its branch and shows the liveliest', () => {
+test('a party keeps every session on its branch that may still be on it and shows the liveliest', () => {
   const rows = [
     row('first', NOW - 2 * HOUR, 'commit', '7.1', { sha: 'b1', branch: 'pie-7-s7.4-fourth' }),
     row('second', NOW - 60000, 'edit', '7.1', { branch: 'pie-7-s7.4-fourth' }),
   ]
   // This session's own branch: the ended first session alone would be a handoff, but a live second one conflicts.
+  // The ended one, with nothing in git, leaves the conflict's session list.
   const found = collisionsFor(world({ rows, self: { sid: 'me', branch: 'pie-7-s7.4-fourth', worktree: '/repo' }, strip: { second: NOW }, ended: { first: NOW - HOUR } }), 7, OPEN)
   expect(found.handoffs).toEqual([])
-  expect(found.conflicts.map(p => [p.sid, p.sids, p.liveness])).toEqual([['second', ['first', 'second'], 'live']])
-  expect(conflictLine(found.conflicts[0]!, NOW)).toContain('2 sessions on it')
+  expect(found.conflicts.map(p => [p.sid, p.sids, p.liveness])).toEqual([['second', ['second'], 'live']])
+  expect(conflictLine(found.conflicts[0]!, NOW).includes('sessions on it')).toBe(false)
+  // Two sessions still around both count.
+  const both = collisionsFor(world({ rows, self: { sid: 'me', branch: 'pie-7-s7.4-fourth', worktree: '/repo' }, strip: { first: NOW, second: NOW } }), 7, OPEN)
+  expect(both.conflicts.map(p => p.sids)).toEqual([['first', 'second']])
+  expect(conflictLine(both.conflicts[0]!, NOW)).toContain('2 sessions on it')
 })
 
 test('an empty open list means nothing is open; null means the checklist could not tell', () => {
