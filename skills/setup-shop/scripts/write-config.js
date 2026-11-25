@@ -63,7 +63,8 @@ function normalize(answers, flow) {
   const ignored = [];
   const notes = [];
   const a = { ...answers };
-  delete a.flow;
+  // `flow` is the A/B/C selector only when it is a string; an object is the config's own flow section.
+  if (!isObject(a.flow)) delete a.flow;
   delete a.projectRoot;
 
   // Q-modelTiers: "defaults" and "manual" both leave the commented hints; an object overrides.
@@ -352,7 +353,7 @@ function ensureBackupDir(dir, flow) {
 const COMMENTS_NOTE = 'hand-written comments are not carried over (the file is re-rendered from the example template)';
 
 function writeConfig(answers, opts = {}) {
-  const flow = String(opts.flow ?? answers.flow ?? '').toUpperCase();
+  const flow = String(opts.flow ?? (typeof answers.flow === 'string' ? answers.flow : '')).toUpperCase();
   if (!['A', 'B', 'C'].includes(flow)) throw new UsageError('flow must be A, B or C (--flow or "flow" in the answers)');
   const target = targetFor(flow, opts, answers);
   const exists = fs.existsSync(target);

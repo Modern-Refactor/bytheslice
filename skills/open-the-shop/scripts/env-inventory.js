@@ -122,7 +122,9 @@ function parseLine(raw) {
   const key = (eq === -1 ? line : line.slice(0, eq)).trim();
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return null;
   let value = eq === -1 ? '' : line.slice(eq + 1).trim();
-  if (/^(['"]).*\1$/.test(value)) value = value.slice(1, -1);
+  // A quoted value ends at its closing quote; anything after it (an inline `# comment`) is dropped.
+  const quoted = /^(['"])(.*?)\1(\s+#.*)?\s*$/.exec(value);
+  if (quoted) value = quoted[2];
   else value = value.replace(/(^|\s+)#.*$/, '').trim();
   return { key, value };
 }

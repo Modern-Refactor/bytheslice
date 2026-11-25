@@ -359,3 +359,12 @@ test('verify on a root with no .env.example fails and says why, never a vacuous 
   assert.equal(out.no_env_examples_found, true);
   assert.deepEqual(out.files_checked, []);
 });
+
+test('a quoted value followed by an inline comment is unquoted before classification', () => {
+  const status = inv.classifyLocal('EMPTY="" # fill this in\nTODO_KEY="TODO" # set your token\nSINGLE=\'\' # later\nREAL="abc-real-value-77" # prod\nHASH="a#b"\n', new Map());
+  assert.equal(status.get('EMPTY'), 'empty');
+  assert.equal(status.get('SINGLE'), 'empty');
+  assert.equal(status.get('TODO_KEY'), 'placeholder');
+  assert.equal(status.get('REAL'), 'usable');
+  assert.equal(status.get('HASH'), 'usable');
+});

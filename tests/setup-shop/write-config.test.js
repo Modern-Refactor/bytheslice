@@ -211,3 +211,13 @@ test('relative --answers, --base and --target paths resolve against --project-ro
   assert.equal(out.config_path, path.join(root, 'out', 'bytheslice.config.json'));
   assert.deepEqual(parseJsonc(fs.readFileSync(out.config_path, 'utf8')).delivery, { mode: 'ship-once' });
 });
+
+test('an object-valued flow answer is the config flow section, never dropped as the A/B/C selector', (t) => {
+  const root = tmp(t);
+  const answers = path.join(root, 'answers.json');
+  fs.writeFileSync(answers, JSON.stringify({ flow: { libraryGate: 'off', autoApproveBuildPlan: true } }));
+  const r = run(['--flow', 'C', '--answers', answers, '--project-root', root]);
+  assert.equal(r.code, 0, r.err);
+  const written = parseJsonc(fs.readFileSync(path.join(root, 'bytheslice.config.json'), 'utf8'));
+  assert.deepEqual(written.flow, { libraryGate: 'off', autoApproveBuildPlan: true });
+});
