@@ -137,7 +137,7 @@ Or hand over the whole order at once: `/bytheslice:pizza-party <brief>` asks its
 | **From GitHub** | `npx github:steve-piece/bytheslice install --target both` | No npm install. |
 | **Pick & choose skills** | `npx bytheslice install --mode skills --skill setup-shop --skill sell-slice` | Grab individual skills into `./.bytheslice-installs/skills/`. |
 
-Default install paths - **Cursor:** `~/.cursor/plugins/local/bytheslice` · **Claude Code:** `~/.claude/plugins/bytheslice`. Scope a single host with `--target cursor` / `--target claude`; override paths with `--cursor-dir` / `--claude-dir` / `--skills-dir`. For declarative installs, point `--config <path>` at a JSONC file (see [`skills-config.example.json`](scripts/install/skills-config.example.json)).
+Default install paths - **Cursor:** `~/.cursor/plugins/local/bytheslice` · **Claude Code:** `~/.claude/plugins/bytheslice`. Scope a single host with `--target cursor` / `--target claude`; override paths with `--cursor-dir` / `--claude-dir` / `--skills-dir`. For declarative installs, point `--config <path>` at a JSONC file (see [`skills-config.example.json`](scripts/install/skills-config.example.json)). A skill that dispatches another skill's agents brings that skill along: `--skill special-order` also installs `sell-slice` (for `code-explorer`) and `cook-pizzas` (for `stage-planner` and `phased-plan-writer`), without their command shims, and the summary names each one added.
 
 > [!NOTE]
 > **Updates take effect next session.** A changed agent or skill file is read when a session starts, so start a new session after updating. A plugin installed into the plugin cache is a snapshot copy: reinstall it (or update it from its marketplace) to pick up a new version.

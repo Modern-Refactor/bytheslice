@@ -3,6 +3,8 @@
 // Skill names: setup-shop, create-menu, cook-pizzas, set-display-case, final-quality-check,
 // open-the-shop, sell-pie, sell-slice, box-it-up, special-order, pizza-party, dashboard,
 // inspect-display, close-shop.
+// A skill that dispatches another skill's agents (a ../<skill>/agents/ link in its SKILL.md)
+// brings that skill too: special-order adds sell-slice and cook-pizzas.
 {
   "mode": "skills",
   "target": "both",

@@ -324,8 +324,9 @@ const topRank = (tiers: readonly string[]): number => Math.max(-1, ...tiers.map(
 /**
  * What tiers read under retired names only may make of a role's tiers: they
  * may raise it, never lower it. `null` when nothing in them ranks above the
- * role's highest tier today (or they would drop the model check, or the role
- * checks no model already); else the role's tiers plus each higher one.
+ * role's highest tier today (or the list is empty, which policyFrom honors
+ * before asking, or the role checks no model already); else the role's tiers
+ * plus each higher one.
  */
 function raisedTiers(before: readonly string[] | null, asked: readonly string[]): string[] | null {
   if (before === null || before.length === 0 || asked.length === 0) return null
@@ -342,7 +343,10 @@ function raisedTiers(before: readonly string[] | null, asked: readonly string[])
  * A key under a retired agent name (`qualityReviewer`, `discovery`) reaches
  * the agent that replaced it but may only RAISE that agent's tier, never lower
  * it (`specReviewer: "sonnet"` alone leaves code-reviewer on opus); a retired
- * key that would not raise it is ignored and listed with `ignored: true`. A
+ * key that would not raise it is ignored and listed with `ignored: true`. The
+ * one exception is an EMPTY `spawnPolicy.roles` list under a retired name
+ * (`"quality-reviewer": []`), a deliberate 6.x opt-out: it turns the model
+ * check off for the agent that replaced it, as a new-name empty list does. A
  * key under the new name sets any tier and always wins, and two retired keys
  * on one role give the higher tier (`modelTiers`) or every tier either allows
  * (`spawnPolicy.roles`) before the raise-only rule applies. Each change is
@@ -394,7 +398,9 @@ export function policyFrom(config: unknown): { policy: PassPolicy; overrides: Po
     if (picked === null) continue
     const before = policy.roles[role] ?? null
     let value = picked.value
-    if (group.own === undefined) {
+    // An empty list under a retired name was a deliberate 6.x opt-out of the
+    // model check, so it is honored as is; a non-empty one may only raise.
+    if (group.own === undefined && picked.value.length > 0) {
       const raised = raisedTiers(before, picked.value)
       if (raised === null) {
         if (!same(before, picked.value)) overrides.push({ setting: `roles.${role}`, value: picked.value, default: before, ...legacyOf(picked), ignored: true })

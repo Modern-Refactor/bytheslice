@@ -73,6 +73,53 @@ function resolveRequestedSkills(requestedSkills, skillIndex) {
   return [...resolved];
 }
 
+// A skill that dispatches another skill's agent links it as ../<skill>/agents/<file>.md
+// (special-order runs sell-slice's code-explorer and cook-pizzas' stage-planner and
+// phased-plan-writer). Those links are the dependency map: installing a skill also
+// installs every skill whose agents it dispatches, transitively, so the link resolves.
+const AGENT_LINK = /\]\(\.\.\/([A-Za-z0-9_-]+)\/agents\/[^)\s]+\)/g;
+
+function agentDependencies(repoRoot, skillPath, skillIndex) {
+  const skillFile = path.join(repoRoot, skillPath, "SKILL.md");
+  if (!fs.existsSync(skillFile)) {
+    return [];
+  }
+  const content = fs.readFileSync(skillFile, "utf8");
+  const found = new Set();
+  for (const match of content.matchAll(AGENT_LINK)) {
+    const dependency = path.join(path.dirname(skillPath), match[1]).split(path.sep).join("/");
+    if (dependency !== skillPath && skillIndex.allSkillPaths.includes(dependency)) {
+      found.add(dependency);
+    }
+  }
+  return [...found].sort();
+}
+
+/**
+ * The selected skills plus every skill whose agents they dispatch. `added` lists
+ * each dependency that was not selected, with the selected skills that need it.
+ */
+function resolveSkillDependencies(repoRoot, skillPaths, skillIndex) {
+  const all = [...skillPaths];
+  const neededBy = new Map();
+  for (let index = 0; index < all.length; index += 1) {
+    for (const dependency of agentDependencies(repoRoot, all[index], skillIndex)) {
+      if (!all.includes(dependency)) {
+        all.push(dependency);
+      }
+      if (!skillPaths.includes(dependency)) {
+        const needers = neededBy.get(dependency) || [];
+        if (!needers.includes(all[index])) {
+          needers.push(all[index]);
+        }
+        neededBy.set(dependency, needers);
+      }
+    }
+  }
+  const added = [...neededBy.entries()].map(([skill, needed]) => ({ skill, neededBy: needed }));
+  return { skills: all, added };
+}
+
 function resolveCommandsForSkills(repoRoot, skillPaths) {
   const commandsDir = path.join(repoRoot, "commands");
   const files = fs.readdirSync(commandsDir, { withFileTypes: true });
@@ -126,5 +173,6 @@ module.exports = {
   readPluginMetadata,
   buildSkillIndex,
   resolveRequestedSkills,
+  resolveSkillDependencies,
   resolveCommandsForSkills,
 };

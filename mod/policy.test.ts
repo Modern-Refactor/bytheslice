@@ -211,7 +211,7 @@ test('a single retired modelTiers key only raises its new role; a new-name key s
   expect(policyFrom({ modelTiers: { 'bytheslice:uiReviewer': 'haiku' } }).policy.roles['ui-reviewer']).toEqual(['haiku'])
 })
 
-test('spawnPolicy.roles under retired names: every tier either allows, raise only, and a new-name key wins', () => {
+test('spawnPolicy.roles under retired names: every tier either allows, raise only, an empty list opts out, and a new-name key wins', () => {
   // Sonnet and opus over code-reviewer's opus raise nothing, so the role keeps opus and the lists are noted as ignored.
   const two = policyFrom({ pass: { spawnPolicy: { roles: { 'spec-reviewer': ['sonnet'], 'bytheslice:quality-reviewer': ['opus'] } } } })
   expect(two.policy.roles['code-reviewer']).toEqual(['opus'])
@@ -229,9 +229,18 @@ test('spawnPolicy.roles under retired names: every tier either allows, raise onl
   const up = policyFrom({ pass: { spawnPolicy: { roles: { 'design-critic': ['opus'] } } } })
   expect(up.policy.roles['ui-reviewer']).toEqual(['sonnet', 'opus'])
   expect(up.overrides).toEqual([{ setting: 'roles.ui-reviewer', value: ['sonnet', 'opus'], default: ['sonnet'], legacy: ['design-critic'] }])
-  // A retired name may not drop the model check either; a new name may.
-  expect(policyFrom({ pass: { spawnPolicy: { roles: { 'spec-reviewer': [] } } } }).policy.roles['code-reviewer']).toEqual(['opus'])
+  // An empty list was a deliberate 6.x opt-out of the model check, so a retired name's empty list is honored, noted once.
+  const off = policyFrom({ pass: { spawnPolicy: { roles: { 'quality-reviewer': [] } } } })
+  expect(off.policy.roles['code-reviewer']).toEqual([])
+  expect(off.overrides).toEqual([{ setting: 'roles.code-reviewer', value: [], default: ['opus'], legacy: ['quality-reviewer'] }])
+  expect(policyFrom({ pass: { spawnPolicy: { roles: { 'bytheslice:discovery': '' } } } }).policy.roles['code-explorer']).toEqual([])
+  // An empty retired list beside a non-empty retired list on one role still turns the check off (an empty list wins the union).
+  expect(policyFrom({ pass: { spawnPolicy: { roles: { 'spec-reviewer': ['opus'], 'quality-reviewer': [] } } } }).policy.roles['code-reviewer']).toEqual([])
   expect(policyFrom({ pass: { spawnPolicy: { roles: { 'code-reviewer': [] } } } }).policy.roles['code-reviewer']).toEqual([])
+  // A new-name key still wins outright over a retired empty list.
+  const keep = policyFrom({ pass: { spawnPolicy: { roles: { 'quality-reviewer': [], 'code-reviewer': ['sonnet'] } } } })
+  expect(keep.policy.roles['code-reviewer']).toEqual(['sonnet'])
+  expect(keep.overrides).toEqual([{ setting: 'roles.code-reviewer', value: ['sonnet'], default: ['opus'], legacy: ['quality-reviewer'] }])
   const named = policyFrom({ pass: { spawnPolicy: { roles: { 'spec-reviewer': ['haiku'], 'code-reviewer': ['sonnet'] } } } })
   expect(named.policy.roles['code-reviewer']).toEqual(['sonnet'])
   // Another plugin's agent of a retired name is that plugin's, not an alias.

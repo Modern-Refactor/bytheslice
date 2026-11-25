@@ -9,6 +9,7 @@ const {
   readPluginMetadata,
   buildSkillIndex,
   resolveRequestedSkills,
+  resolveSkillDependencies,
   resolveCommandsForSkills,
 } = require("./manifests");
 const { copyPaths } = require("./sync");
@@ -77,8 +78,11 @@ function installPluginMode({ repoRoot, args, targets, pluginMetadata }) {
 
 function installSkillsMode({ repoRoot, args, targets }) {
   const skillIndex = buildSkillIndex(repoRoot);
-  const selectedSkills = resolveRequestedSkills(args.skills, skillIndex);
-  const commandPaths = resolveCommandsForSkills(repoRoot, selectedSkills);
+  const requestedSkills = resolveRequestedSkills(args.skills, skillIndex);
+  // A dependency is copied for the agents the requested skills dispatch from it;
+  // only the requested skills get command shims.
+  const { skills: selectedSkills, added } = resolveSkillDependencies(repoRoot, requestedSkills, skillIndex);
+  const commandPaths = resolveCommandsForSkills(repoRoot, requestedSkills);
 
   const sourcePaths = [...selectedSkills, ...commandPaths];
   const report = copyPaths(repoRoot, sourcePaths, targets.skillsTarget.rootDir, {
@@ -88,6 +92,7 @@ function installSkillsMode({ repoRoot, args, targets }) {
   printSkillsSummary({
     destination: targets.skillsTarget.rootDir,
     selectedSkills,
+    added,
     commandPaths,
     report,
     dryRun: args.dryRun,
@@ -105,11 +110,15 @@ function printPluginSummary(targetReports, dryRun) {
   }
 }
 
-function printSkillsSummary({ destination, selectedSkills, commandPaths, report, dryRun }) {
+function printSkillsSummary({ destination, selectedSkills, added, commandPaths, report, dryRun }) {
   const mode = dryRun ? "DRY RUN" : "APPLIED";
+  const bare = (skill) => skill.replace(/^skills\//, "");
   console.log(`[bytheslice] Skills install ${mode}`);
   console.log(`  - destination: ${destination}`);
-  console.log(`  - skills: ${selectedSkills.map((skill) => skill.replace(/^skills\//, "")).join(", ")}`);
+  console.log(`  - skills: ${selectedSkills.map(bare).join(", ")}`);
+  for (const dependency of added) {
+    console.log(`  - added ${bare(dependency.skill)}: ${dependency.neededBy.map(bare).join(", ")} dispatches its agents`);
+  }
   console.log(`  - command shims: ${commandPaths.length}`);
   printReportStats(report);
 }

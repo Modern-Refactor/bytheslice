@@ -250,19 +250,21 @@ fi
 rm -rf "$FIX"
 
 # Retired agent names in the ledger or the kitchen log → one pointer line to
-# the legacy name table; current names (and a name that only ends like an old
+# the legacy name table when a row naming one is from the last 7 days ("t" is
+# epoch milliseconds); current names (and a name that only ends like an old
 # one, scaffold-discovery) print nothing.
+NOW_MS=$(( $(date +%s) * 1000 ))
+OLD_MS=$(( NOW_MS - 8 * 86400 * 1000 ))
 FIX=$(mk_fixture)
 mkdir -p "$FIX/docs/plans" "$FIX/.bytheslice" "$FIX/.claude/.bytheslice-state/kitchen"
 printf '## Pie 2 - Editor\n\n### Slice 2.1 - Shell\n' > "$FIX/docs/plans/00_master_checklist.md"
-printf '%s\n' '{"v":1,"t":1,"sid":"s","ev":"verdict","agent":"bytheslice:code-reviewer"}' \
-  '{"v":1,"t":2,"sid":"s","ev":"edit","data":{"agent":"bytheslice:scaffold-discovery"}}' > "$FIX/.bytheslice/ledger.jsonl"
+printf '{"v":1,"t":%s,"sid":"s","ev":"verdict","agent":"bytheslice:code-reviewer"}\n' "$NOW_MS" > "$FIX/.bytheslice/ledger.jsonl"
+printf '{"v":1,"t":%s,"sid":"s","ev":"edit","data":{"agent":"bytheslice:scaffold-discovery"}}\n' "$NOW_MS" >> "$FIX/.bytheslice/ledger.jsonl"
 CLAUDE_PROJECT_DIR=$FIX run_hook "$SHOP_STATUS" '{}'
 assert_exit "shop-status current names exit 0" 0
 assert_not_contains "shop-status current names print no legacy line" "legacy agent names"
-printf '%s\n' '{"v":1,"t":3,"sid":"s","ev":"verdict","agent":"bytheslice:spec-reviewer"}' >> "$FIX/.bytheslice/ledger.jsonl"
-printf '%s\n' '{"t":4,"ev":"SubagentStart","agent":"bytheslice:discovery","aid":"a"}' \
-  '{"t":5,"ev":"SubagentStart","agent":"bytheslice:discovery","aid":"b"}' > "$FIX/.claude/.bytheslice-state/kitchen/activity.jsonl"
+printf '{"v":1,"t":%s,"sid":"s","ev":"verdict","agent":"bytheslice:spec-reviewer"}\n' "$NOW_MS" >> "$FIX/.bytheslice/ledger.jsonl"
+printf '{"t":%s,"ev":"SubagentStart","agent":"bytheslice:discovery","aid":"a"}\n' "$NOW_MS" "$NOW_MS" > "$FIX/.claude/.bytheslice-state/kitchen/activity.jsonl"
 CLAUDE_PROJECT_DIR=$FIX run_hook "$SHOP_STATUS" '{}'
 assert_exit "shop-status legacy names exit 0" 0
 assert_contains "shop-status names the legacy agents found" "legacy agent names in the ledger or kitchen log (discovery, spec-reviewer)"
@@ -272,17 +274,27 @@ if [ "$(printf '%s\n' "$LAST_OUT" | grep -c 'legacy agent names')" = 1 ]; then
 else
   FAIL=$((FAIL+1)); FAILED_NAMES+=("shop-status prints one legacy line"); printf '  ✗ shop-status prints one legacy line\n'
 fi
-# Only recent rows count: once 500 newer rows follow the old names in every
-# log, the line stops (a 6.x ledger does not print it forever).
+# A long run of newer rows does not hide a recent old name: 600 current rows
+# after it, the line still prints.
 rm -f "$FIX/.claude/.bytheslice-state/kitchen/activity.jsonl"
-for i in $(seq 1 500); do
-  printf '{"v":1,"t":%s,"sid":"s","ev":"verdict","agent":"bytheslice:code-reviewer"}\n' "$((i+10))"
+for i in $(seq 1 600); do
+  printf '{"v":1,"t":%s,"sid":"s","ev":"verdict","agent":"bytheslice:code-reviewer"}\n' "$((NOW_MS + i))"
 done >> "$FIX/.bytheslice/ledger.jsonl"
 CLAUDE_PROJECT_DIR=$FIX run_hook "$SHOP_STATUS" '{}'
+assert_exit "shop-status recent legacy row behind 600 rows exit 0" 0
+assert_contains "shop-status finds a recent legacy name behind 600 newer rows" "legacy agent names in the ledger or kitchen log (spec-reviewer)"
+# Old names only in rows older than 7 days print nothing, even as the last rows.
+printf '{"v":1,"t":%s,"sid":"s","ev":"verdict","agent":"bytheslice:spec-reviewer"}\n' "$OLD_MS" > "$FIX/.bytheslice/ledger.jsonl"
+printf '{"v":1,"t":%s,"sid":"s","ev":"verdict","agent":"bytheslice:quality-reviewer"}\n' "$OLD_MS" >> "$FIX/.bytheslice/ledger.jsonl"
+CLAUDE_PROJECT_DIR=$FIX run_hook "$SHOP_STATUS" '{}'
 assert_exit "shop-status old legacy rows exit 0" 0
-assert_not_contains "shop-status ignores legacy names older than the last 500 rows" "legacy agent names"
-# A legacy name among the recent rows of one log still prints it.
-printf '%s\n' '{"t":9,"ev":"SubagentStart","agent":"bytheslice:design-critic","aid":"c"}' > "$FIX/.claude/.bytheslice-state/kitchen/activity.1.jsonl"
+assert_not_contains "shop-status ignores legacy names older than 7 days" "legacy agent names"
+# The rotated kitchen log counts too: a recent old name there prints, an old
+# one there does not.
+printf '{"t":%s,"ev":"SubagentStart","agent":"bytheslice:break-ui-runner","aid":"c"}\n' "$OLD_MS" > "$FIX/.claude/.bytheslice-state/kitchen/activity.1.jsonl"
+CLAUDE_PROJECT_DIR=$FIX run_hook "$SHOP_STATUS" '{}'
+assert_not_contains "shop-status ignores an old legacy row in the rotated kitchen log" "legacy agent names"
+printf '{"t":%s,"ev":"SubagentStart","agent":"bytheslice:design-critic","aid":"d"}\n' "$NOW_MS" >> "$FIX/.claude/.bytheslice-state/kitchen/activity.1.jsonl"
 CLAUDE_PROJECT_DIR=$FIX run_hook "$SHOP_STATUS" '{}'
 assert_contains "shop-status reads recent rows of the rotated kitchen log" "legacy agent names in the ledger or kitchen log (design-critic)"
 rm -rf "$FIX"
