@@ -5,7 +5,20 @@ import { expect, test } from 'claude-code/testing'
 
 import { headsMatch, skillName } from './checks.ts'
 import { CHECKLIST_FIXTURE } from './fixtures/checklist.fixture.ts'
-import { DEFAULT_MARKERS, DEFAULT_POLICY, DEFAULT_ROLES, policyFrom, readPolicy, tierAllowed } from './policy.ts'
+import {
+  CONTEXT_ROLES,
+  DEFAULT_MARKERS,
+  DEFAULT_POLICY,
+  DEFAULT_ROLES,
+  EXPECTED_MARKERS,
+  GATE_ROLES,
+  LEGACY_AGENT_ALIASES,
+  canonicalRole,
+  legacyNamesOf,
+  policyFrom,
+  readPolicy,
+  tierAllowed,
+} from './policy.ts'
 import { CWD, HEAD, LEDGER, activeAt52, bashResult, engineLoops, ledgerLine, ledgerText, rowsOf, stage, warnsOf } from './testing.tsx'
 
 const CONFIG = `${CWD}/bytheslice.config.json`
@@ -22,13 +35,17 @@ const PROJECT = `{
 }`
 
 test('the defaults cover every role with one tier each and the four context markers', () => {
-  expect(Object.keys(DEFAULT_ROLES)).toHaveLength(52)
+  expect(Object.keys(DEFAULT_ROLES)).toHaveLength(42)
   expect(Object.values(DEFAULT_ROLES).every(tiers => tiers.length === 1)).toBe(true)
   expect(DEFAULT_ROLES.implementer).toEqual(['opus'])
-  expect(DEFAULT_ROLES['quality-reviewer']).toEqual(['opus'])
+  expect(DEFAULT_ROLES['code-reviewer']).toEqual(['opus'])
   expect(DEFAULT_ROLES['fix-attempter']).toEqual(['sonnet'])
   expect(DEFAULT_ROLES['slice-verifier']).toEqual(['sonnet'])
-  expect(DEFAULT_ROLES.discovery).toEqual(['opus'])
+  expect(DEFAULT_ROLES['code-explorer']).toEqual(['opus'])
+  expect(DEFAULT_ROLES['ui-reviewer']).toEqual(['sonnet'])
+  expect(DEFAULT_ROLES['stage-planner']).toEqual(['opus'])
+  expect(DEFAULT_ROLES['ux-layout-designer']).toEqual(['sonnet'])
+  expect(DEFAULT_ROLES['ui-builder']).toEqual(['sonnet'])
   expect(DEFAULT_MARKERS).toEqual(['files_changed', 'diff --git', 'implementer returned', 'builder transcript'])
   expect(DEFAULT_POLICY).toMatchObject({ enabled: true, requireTester: 'ui-slices' })
 })
@@ -37,17 +54,25 @@ test('a project config overrides per role, replaces the markers and lists each c
   const read = readPolicy(PROJECT)
   expect(read.problem).toBeNull()
   expect(read.policy.requireTester).toBe('always')
-  expect(read.policy.roles.discovery).toEqual(['haiku', 'sonnet'])
+  // A retired-name list may only raise a role's tier: haiku and sonnet would lower code-explorer, so it stays opus.
+  expect(read.policy.roles['code-explorer']).toEqual(['opus'])
+  expect(read.policy.roles.discovery).toBeUndefined()
   expect(read.policy.roles['fix-attempter']).toEqual(['opus'])
   expect(read.policy.roles['slice-verifier']).toEqual(['sonnet'])
   expect(read.policy.contextMarkers).toEqual(['files_changed', 'my transcript'])
   expect(read.overrides.map(o => o.setting)).toEqual([
     'checks.requireTester',
-    'roles.discovery',
+    'roles.code-explorer',
     'roles.fix-attempter',
     'contextMarkers',
   ])
-  expect(read.overrides[1]).toEqual({ setting: 'roles.discovery', value: ['haiku', 'sonnet'], default: ['opus'] })
+  expect(read.overrides[1]).toEqual({
+    setting: 'roles.code-explorer',
+    value: ['haiku', 'sonnet'],
+    default: ['opus'],
+    legacy: ['bytheslice:discovery'],
+    ignored: true,
+  })
 })
 
 test('modelTiers sets a role the conductor dispatches with; spawnPolicy.roles still wins', () => {
@@ -58,6 +83,159 @@ test('modelTiers sets a role the conductor dispatches with; spawnPolicy.roles st
   expect(read.overrides.map(o => o.setting)).toEqual(['roles.fix-attempter', 'roles.token-expander'])
   const both = policyFrom({ modelTiers: { fixAttempter: 'opus' }, pass: { spawnPolicy: { roles: { 'fix-attempter': ['haiku'] } } } })
   expect(both.policy.roles['fix-attempter']).toEqual(['haiku'])
+})
+
+test('every retired name resolves to a registered agent, a script or nothing; canonicalRole drops any plugin prefix', () => {
+  for (const [name, alias] of Object.entries(LEGACY_AGENT_ALIASES)) {
+    if (name in DEFAULT_ROLES) continue
+    // A retired name is no role of its own, and its replacement is registered (or it has none).
+    if (alias.agent !== null) expect(DEFAULT_ROLES[alias.agent]).toBeDefined()
+    expect(canonicalRole(name)).toBe(alias.agent ?? name)
+  }
+  expect(canonicalRole('bytheslice:spec-reviewer')).toBe('code-reviewer')
+  expect(canonicalRole('quality-reviewer')).toBe('code-reviewer')
+  expect(canonicalRole('other:design-critic')).toBe('ui-reviewer')
+  expect(canonicalRole('bytheslice:break-ui-runner')).toBe('ui-reviewer')
+  expect(canonicalRole('discovery')).toBe('code-explorer')
+  expect(canonicalRole('checklist-curator')).toBe('code-explorer')
+  expect(canonicalRole('complexity-assessor')).toBe('stage-planner')
+  expect(canonicalRole('stage-decomposer')).toBe('stage-planner')
+  expect(canonicalRole('db-schema-stage-writer')).toBe('phased-plan-writer')
+  expect(canonicalRole('modern-ux-expert')).toBe('ux-layout-designer')
+  expect(canonicalRole('layout-architect')).toBe('ux-layout-designer')
+  expect(canonicalRole('block-composer')).toBe('ui-builder')
+  expect(canonicalRole('component-crafter')).toBe('ui-builder')
+  // Deleted agents, current names and unknown names stay as written.
+  expect(canonicalRole('bytheslice:bootstrap-runner')).toBe('bootstrap-runner')
+  expect(canonicalRole('bytheslice:slice-verifier')).toBe('slice-verifier')
+  expect(canonicalRole('scaffold-discovery')).toBe('scaffold-discovery')
+  expect(canonicalRole('Explore')).toBe('Explore')
+  expect(canonicalRole(undefined)).toBe('')
+  // A name the scripts change retires next is still registered, so it is still its own role until then.
+  expect(LEGACY_AGENT_ALIASES['e2e-installer']).toEqual({ agent: 'scaffold-writer', mode: 'e2e' })
+  expect(canonicalRole('e2e-installer')).toBe('e2e-installer')
+  expect(canonicalRole('env-scanner')).toBe('env-scanner')
+  expect(LEGACY_AGENT_ALIASES.discovery).toEqual({ agent: 'code-explorer', mode: 'stage-recon' })
+  expect(LEGACY_AGENT_ALIASES['design-critic']).toEqual({ agent: 'ui-reviewer', mode: 'critique' })
+  expect(legacyNamesOf('code-reviewer')).toEqual(['spec-reviewer', 'quality-reviewer'])
+  expect(legacyNamesOf('implementer')).toEqual([])
+})
+
+test('code-reviewer is a gate and a context role with the expected markers the two old reviewers had', () => {
+  expect(GATE_ROLES.has('code-reviewer')).toBe(true)
+  expect(CONTEXT_ROLES.has('code-reviewer')).toBe(true)
+  expect(EXPECTED_MARKERS['code-reviewer']).toEqual(['files_changed', 'diff --git', 'implementer returned'])
+  for (const old of ['spec-reviewer', 'quality-reviewer']) {
+    expect(GATE_ROLES.has(canonicalRole(old))).toBe(true)
+    expect(CONTEXT_ROLES.has(canonicalRole(old))).toBe(true)
+    expect(EXPECTED_MARKERS[canonicalRole(old)]).toEqual(['files_changed', 'diff --git', 'implementer returned'])
+  }
+})
+
+test('modelTiers under retired names set the new role: the higher tier wins, one note, and a new-name key always wins', () => {
+  // One retired key moves its new role.
+  const one = policyFrom({ modelTiers: { designCritic: 'opus' } })
+  expect(one.policy.roles['ui-reviewer']).toEqual(['opus'])
+  expect(one.overrides).toEqual([{ setting: 'roles.ui-reviewer', value: ['opus'], default: ['sonnet'], legacy: ['designCritic'] }])
+  // Two retired keys on one role: the higher tier, recorded once.
+  const two = policyFrom({ modelTiers: { specReviewer: 'sonnet', qualityReviewer: 'opus', blockComposer: 'haiku', componentCrafter: 'opus' } })
+  expect(two.policy.roles['code-reviewer']).toEqual(['opus'])
+  expect(two.policy.roles['ui-builder']).toEqual(['opus'])
+  expect(two.overrides).toEqual([
+    { setting: 'roles.ui-builder', value: ['opus'], default: ['sonnet'], legacy: ['blockComposer', 'componentCrafter'] },
+  ])
+  // Retired keys may only raise: two haiku keys would lower ux-layout-designer, so it stays sonnet, with one ignored note.
+  const down = policyFrom({ modelTiers: { modernUxExpert: 'haiku', layoutArchitect: 'haiku' } })
+  expect(down.policy.roles['ux-layout-designer']).toEqual(['sonnet'])
+  expect(down.overrides).toEqual([
+    { setting: 'roles.ux-layout-designer', value: ['haiku'], default: ['sonnet'], legacy: ['modernUxExpert', 'layoutArchitect'], ignored: true },
+  ])
+  // A key under the new name wins over every retired key, whichever comes first.
+  const named = policyFrom({ modelTiers: { qualityReviewer: 'opus', codeReviewer: 'sonnet', specReviewer: 'opus' } })
+  expect(named.policy.roles['code-reviewer']).toEqual(['sonnet'])
+  expect(named.overrides).toEqual([
+    { setting: 'roles.code-reviewer', value: ['sonnet'], default: ['opus'], legacy: ['qualityReviewer', 'specReviewer'] },
+  ])
+  // Every PR 1 retired key reaches its role; the old names gain no role of their own.
+  const all = policyFrom({
+    modelTiers: {
+      discovery: 'sonnet',
+      checklistCurator: 'haiku',
+      complexityAssessor: 'sonnet',
+      stageDecomposer: 'haiku',
+      dbSchemaStageWriter: 'sonnet',
+      breakUiRunner: 'haiku',
+    },
+  })
+  // Each would lower its role, so every role keeps its default and each is noted as ignored.
+  expect(all.policy.roles['code-explorer']).toEqual(['opus'])
+  expect(all.policy.roles['stage-planner']).toEqual(['opus'])
+  expect(all.policy.roles['phased-plan-writer']).toEqual(['opus'])
+  expect(all.policy.roles['ui-reviewer']).toEqual(['sonnet'])
+  expect(all.overrides.map(o => [o.setting, o.ignored])).toEqual([
+    ['roles.code-explorer', true],
+    ['roles.stage-planner', true],
+    ['roles.phased-plan-writer', true],
+    ['roles.ui-reviewer', true],
+  ])
+  for (const old of ['discovery', 'checklist-curator', 'stage-decomposer', 'db-schema-stage-writer']) expect(all.policy.roles[old]).toBeUndefined()
+  // A still-registered agent the scripts change retires next keeps its own key.
+  expect(policyFrom({ modelTiers: { envScanner: 'sonnet' } }).policy.roles['env-scanner']).toEqual(['sonnet'])
+  // A deleted agent's key names no role and is ignored.
+  expect(policyFrom({ modelTiers: { bootstrapRunner: 'opus' } }).overrides).toEqual([])
+})
+
+test('a single retired modelTiers key only raises its new role; a new-name key sets any tier', () => {
+  // specReviewer: sonnet alone leaves code-reviewer on opus, with one ignored note.
+  const spec = policyFrom({ modelTiers: { specReviewer: 'sonnet' } })
+  expect(spec.policy.roles['code-reviewer']).toEqual(['opus'])
+  expect(spec.overrides).toEqual([{ setting: 'roles.code-reviewer', value: ['sonnet'], default: ['opus'], legacy: ['specReviewer'], ignored: true }])
+  const quality = policyFrom({ modelTiers: { qualityReviewer: 'haiku' } })
+  expect(quality.policy.roles['code-reviewer']).toEqual(['opus'])
+  expect(quality.overrides[0]?.ignored).toBe(true)
+  // stageDecomposer: sonnet leaves stage-planner on opus; complexityAssessor and discovery likewise.
+  expect(policyFrom({ modelTiers: { stageDecomposer: 'sonnet' } }).policy.roles['stage-planner']).toEqual(['opus'])
+  expect(policyFrom({ modelTiers: { complexityAssessor: 'sonnet' } }).policy.roles['stage-planner']).toEqual(['opus'])
+  expect(policyFrom({ modelTiers: { discovery: 'sonnet' } }).policy.roles['code-explorer']).toEqual(['opus'])
+  expect(policyFrom({ modelTiers: { checklistCurator: 'haiku' } }).policy.roles['code-explorer']).toEqual(['opus'])
+  // A retired key naming the tier the role already has changes nothing and notes nothing.
+  expect(policyFrom({ modelTiers: { specReviewer: 'opus' } }).overrides).toEqual([])
+  // A retired key above the default raises it.
+  const raise = policyFrom({ modelTiers: { breakUiRunner: 'opus' } })
+  expect(raise.policy.roles['ui-reviewer']).toEqual(['opus'])
+  expect(raise.overrides).toEqual([{ setting: 'roles.ui-reviewer', value: ['opus'], default: ['sonnet'], legacy: ['breakUiRunner'] }])
+  expect(policyFrom({ modelTiers: { componentCrafter: 'opus' } }).policy.roles['ui-builder']).toEqual(['opus'])
+  // A new-name key sets any tier, down as well as up.
+  expect(policyFrom({ modelTiers: { codeReviewer: 'sonnet' } }).policy.roles['code-reviewer']).toEqual(['sonnet'])
+  expect(policyFrom({ modelTiers: { stagePlanner: 'haiku' } }).policy.roles['stage-planner']).toEqual(['haiku'])
+  expect(policyFrom({ modelTiers: { 'bytheslice:uiReviewer': 'haiku' } }).policy.roles['ui-reviewer']).toEqual(['haiku'])
+})
+
+test('spawnPolicy.roles under retired names: every tier either allows, raise only, and a new-name key wins', () => {
+  // Sonnet and opus over code-reviewer's opus raise nothing, so the role keeps opus and the lists are noted as ignored.
+  const two = policyFrom({ pass: { spawnPolicy: { roles: { 'spec-reviewer': ['sonnet'], 'bytheslice:quality-reviewer': ['opus'] } } } })
+  expect(two.policy.roles['code-reviewer']).toEqual(['opus'])
+  expect(two.overrides).toEqual([
+    {
+      setting: 'roles.code-reviewer',
+      value: ['sonnet', 'opus'],
+      default: ['opus'],
+      legacy: ['spec-reviewer', 'bytheslice:quality-reviewer'],
+      ignored: true,
+    },
+  ])
+  // A single retired list below the default is ignored; one above it adds the higher tier and keeps the default allowed.
+  expect(policyFrom({ pass: { spawnPolicy: { roles: { 'stage-decomposer': ['sonnet'] } } } }).policy.roles['stage-planner']).toEqual(['opus'])
+  const up = policyFrom({ pass: { spawnPolicy: { roles: { 'design-critic': ['opus'] } } } })
+  expect(up.policy.roles['ui-reviewer']).toEqual(['sonnet', 'opus'])
+  expect(up.overrides).toEqual([{ setting: 'roles.ui-reviewer', value: ['sonnet', 'opus'], default: ['sonnet'], legacy: ['design-critic'] }])
+  // A retired name may not drop the model check either; a new name may.
+  expect(policyFrom({ pass: { spawnPolicy: { roles: { 'spec-reviewer': [] } } } }).policy.roles['code-reviewer']).toEqual(['opus'])
+  expect(policyFrom({ pass: { spawnPolicy: { roles: { 'code-reviewer': [] } } } }).policy.roles['code-reviewer']).toEqual([])
+  const named = policyFrom({ pass: { spawnPolicy: { roles: { 'spec-reviewer': ['haiku'], 'code-reviewer': ['sonnet'] } } } })
+  expect(named.policy.roles['code-reviewer']).toEqual(['sonnet'])
+  // Another plugin's agent of a retired name is that plugin's, not an alias.
+  expect(policyFrom({ pass: { spawnPolicy: { roles: { 'other:discovery': ['haiku'] } } } }).policy.roles['other:discovery']).toEqual(['haiku'])
 })
 
 test('a missing or malformed config gives the defaults; a malformed one says why', () => {
@@ -91,9 +269,11 @@ test('at session start the policy is read once and each override is recorded onc
   expect(notes).toHaveLength(4)
   expect(notes[1]?.data).toEqual({
     kind: 'policy-override',
-    setting: 'roles.discovery',
+    setting: 'roles.code-explorer',
     value: ['haiku', 'sonnet'],
     default: ['opus'],
+    legacy: ['bytheslice:discovery'],
+    ignored: true,
   })
   // A second session over the same ledger records nothing new.
   await start($)

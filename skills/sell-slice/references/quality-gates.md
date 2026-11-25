@@ -18,7 +18,7 @@ The operator decides which gates a project runs when they set it up (`/setup-sho
 | `e2e` | `slice-verifier`, CI | `feature_e2e`, `regression_core_e2e`, `smoke_e2e` |
 | `visual` | `slice-verifier`, `slice-tester`, CI | `visual_e2e`, and the tester's rendered design-system match |
 | `design-system` | `slice-verifier`, CI | `design_system`: the raw-value grep, and statics findings `E1 UNKNOWN_TOKEN`, `E2 VAR_FALLBACK`, `E3 UNKNOWN_MOTION` |
-| `accessibility` | `slice-tester`, `slice-verifier`, `design-critic`, `break-ui-runner` | every `a11y.*` key (WCAG AA contrast, keyboard order, visible focus, focus trap, error not by color alone, reduced motion, dark-mode contrast), statics findings `E4 IMG_NO_ALT` and `E5 INPUT_NO_LABEL`, and any measured finding under a WCAG threshold (contrast under 4.5:1 or 3:1, a target under 24 by 24 CSS px, a control with no accessible name, a focus stop with no visible indicator) |
+| `accessibility` | `slice-tester`, `slice-verifier`, `ui-reviewer` (both modes) | every `a11y.*` key (WCAG AA contrast, keyboard order, visible focus, focus trap, error not by color alone, reduced motion, dark-mode contrast), statics findings `E4 IMG_NO_ALT` and `E5 INPUT_NO_LABEL`, and any measured finding under a WCAG threshold (contrast under 4.5:1 or 3:1, a target under 24 by 24 CSS px, a control with no accessible name, a focus stop with no visible indicator) |
 | `ci` | CI at the PR (`/box-it-up`) | every check the PR's workflows run |
 | `declared` | `slice-verifier` | each `gates.declared` entry, and every command the project's `.husky/pre-push` hook or CI workflows run that no class above covers |
 

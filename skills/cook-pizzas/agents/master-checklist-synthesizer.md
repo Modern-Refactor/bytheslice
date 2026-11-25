@@ -14,7 +14,7 @@ You do not make creative decisions. You do not modify slice files. You do not in
 
 The orchestrator provides:
 1. **Writer returns**: one envelope per slice, each carrying `path`, `stage`, `pie`, `slice` (dotted id such as `"7.1"`), `review`, `name`, `type`, `depends_on`, `tasks_count`, `completion_criteria`, `exit_criteria`, `hitl_required`
-2. **Pie roadmap**: the approved Phase 2 tree, giving each pie's number, name, one-line scope, `review` value, `mvp` flag, pie-level `depends_on`, and its optional `user_flow` (from `stage-decomposer`: ordered `{step, slice}` entries)
+2. **Pie roadmap**: the approved Phase 2 tree, giving each pie's number, name, one-line scope, `review` value, `mvp` flag, pie-level `depends_on`, and its optional `user_flow` (from `stage-planner` mode `full`: ordered `{step, slice}` entries)
 3. **Project name** and one-sentence description: from the PRD
 4. **MVP/Phase 2 split**: Q1 answer (whether to separate MVP and Phase 2 summary tables)
 5. **Database in scope**: Q3 answer (whether the Prep gate lists Slice 1.4)

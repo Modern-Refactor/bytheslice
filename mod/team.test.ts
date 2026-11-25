@@ -28,7 +28,7 @@ test('the roster lists each teammate on the team once, by pie, with its turns, s
   const agents = [
     teammateInfo('b', 'beta', 'P6 S6.1 beta: bake', 'idle'),
     teammateInfo('a', 'alpha', 'P5 S5.6 alpha: bake'),
-    { id: 'sub', description: 'P5 S5.6 discover: map', type: 'bytheslice:discovery', status: 'running' as const },
+    { id: 'sub', description: 'P5 S5.6 discover: map', type: 'bytheslice:code-explorer', status: 'running' as const },
     teammateInfo('gone', 'gamma', 'P7 S7.1 gamma: bake', 'killed'),
   ]
   const ledger = [
@@ -70,7 +70,7 @@ test('a teammate turn appends one usage row with its address, name, pie, slice a
   world.agents = []
   await startTurn($, 'tm-a', 'bake Pie 6')
   await endTurn($, 'baked a slice', 'tm-a')
-  await spawn($, 'bytheslice:discovery', 'P6 S6.1 discover: map')
+  await spawn($, 'bytheslice:code-explorer', 'P6 S6.1 discover: map')
   await endTurn($, 'mapped', 'sub-1')
   const usage = rowsOf(world).filter(r => r.ev === 'usage')
   expect(usage).toHaveLength(1)

@@ -7,7 +7,7 @@ import type { AgentSpawnInput, EngineInterface, TurnCompleteInput } from 'claude
 import { labelOf } from './capture.ts'
 import { checksOn } from './checks.ts'
 import type { Finding } from './checks.ts'
-import { CONTEXT_ROLES, EXPECTED_MARKERS, GATE_ROLES, PROMPT_MAX, TEAMMATE_ROLE, tierAllowed } from './policy.ts'
+import { CONTEXT_ROLES, EXPECTED_MARKERS, GATE_ROLES, PROMPT_MAX, TEAMMATE_ROLE, canonicalRole, tierAllowed } from './policy.ts'
 import type { PassPolicy, PassSpawnTrack } from './types'
 
 const spawnsAtom = atom({ plugin: 'bytheslice', key: 'pass.spawns' } as const, {})
@@ -15,10 +15,15 @@ const spawnsAtom = atom({ plugin: 'bytheslice', key: 'pass.spawns' } as const, {
 /** How many tracked spawns the drift check keeps. */
 export const SPAWNS_KEEP = 200
 
-/** The role of an agent type: `bytheslice:slice-tester` reads `slice-tester`; another plugin's type stays whole. */
+/**
+ * The role of an agent type: `bytheslice:slice-tester` reads `slice-tester`,
+ * and a retired name reads the agent that replaced it (`bytheslice:spec-reviewer`
+ * reads `code-reviewer`, see LEGACY_AGENT_ALIASES); another plugin's type stays whole.
+ */
 export function roleOf(subagentType: unknown): string {
   if (typeof subagentType !== 'string') return ''
-  return subagentType.startsWith('bytheslice:') ? subagentType.slice('bytheslice:'.length) : subagentType
+  const bare = subagentType.startsWith('bytheslice:') ? subagentType.slice('bytheslice:'.length) : subagentType
+  return bare.includes(':') ? bare : canonicalRole(bare)
 }
 
 const tiers = (allowed: readonly string[]): string => allowed.join(' or ')

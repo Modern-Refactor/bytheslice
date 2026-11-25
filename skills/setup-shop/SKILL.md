@@ -375,7 +375,7 @@ For Flow C:
 > **Next steps:**
 > - **Have a PRD already?** Run `/bytheslice:cook-pizzas` to generate phased plans.
 > - **No PRD yet?** Run `/bytheslice:create-menu` to write one against this existing app's surface area.
-> - **Just want to add a feature or two?** Run `/bytheslice:special-order` directly. Note: without a master checklist (no `docs/plans/`), special-order will redirect you back here. To go from existing-app → special-order flow, run `/bytheslice:create-menu` first to give the complexity assessor grounding context.
+> - **Just want to add a feature or two?** Run `/bytheslice:special-order` directly. Note: without a master checklist (no `docs/plans/`), special-order will redirect you back here. To go from existing-app → special-order flow, run `/bytheslice:create-menu` first to give the stage planner grounding context.
 
 ---
 

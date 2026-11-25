@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const test = require('node:test');
-const { buildSnapshot, readKitchenState } = require('../../mcp/kitchen-state.js');
+const { buildSnapshot, readKitchenState, LEGACY_ROLES } = require('../../mcp/kitchen-state.js');
 const names = ['walls', 'menu', 'tickets', 'case', 'safe', 'oven', 'alarm', 'locks'];
 
 async function scratch(t) {
@@ -118,7 +118,9 @@ test('build driver installs once on a presence edge, resets roots, and handles r
 async function sceneAdapters() {
   const html = await fs.readFile(path.join(__dirname, '../../skills/dashboard/kitchen.html'), 'utf8');
   const code = html.slice(html.indexOf('const liveAssignments ='), html.indexOf('const castDriver ='));
-  const ids = ['bootstrap-runner', 'config-generator', 'platform-walker'];
+  // The construction crew fixture is /cook-pizzas: stage-planner and master-checklist-synthesizer stay
+  // agents through the roster changes, where /setup-shop's two agents become scripts next.
+  const ids = ['stage-planner', 'master-checklist-synthesizer', 'platform-walker'];
   const byId = Object.fromEntries(ids.map(id => [id, { id, name: id, type: id, crew: id === 'platform-walker' ? 'door' : 'setup' }]));
   const actors = ids.map(id => ({
     meta: byId[id], mode: 'idle', task: '', hidden: false, path: [], walks: [],
@@ -145,35 +147,37 @@ async function sceneAdapters() {
   return { ...api, actors: Object.fromEntries(actors.map(actor => [actor.meta.id, actor])), byId, timers };
 }
 const sceneSnapshot = (skills = [], active = []) => ({ skills: skills.map(name => ({ name, status: 'active' })), active });
-const sceneEvent = (scene, id, key = id) => ({ key, character: scene.byId[id], row: { aid: key, label: 'Normal assignment' }, ok: true });
+const sceneEvent = (scene, id, key = id, type = id) => ({ key, character: scene.byId[id], row: { aid: key, type: `bytheslice:${type}`, label: 'Normal assignment' }, ok: true });
 const flushArrivals = async () => { await Promise.resolve(); await Promise.resolve(); };
 
 test('construction owns actor paths and tasks across real agent start, updates, and stop', async () => {
-  const scene = await sceneAdapters(), actor = scene.actors['bootstrap-runner'];
-  const snapshot = sceneSnapshot(['setup-shop']);
+  const scene = await sceneAdapters(), actor = scene.actors['stage-planner'];
+  const snapshot = sceneSnapshot(['cook-pizzas']);
   scene.syncBuildCrews(snapshot);
-  const constructionPath = actor.path, event = sceneEvent(scene, 'bootstrap-runner');
+  const constructionPath = actor.path, event = sceneEvent(scene, 'stage-planner');
   scene.agentOn(event); scene.syncBuildCrews(snapshot);
   assert.strictEqual(actor.path, constructionPath);
   scene.agentOn({ ...event, row: { ...event.row, label: 'Updated assignment' } });
-  assert.equal(actor.task, 'Installing walls');
+  assert.equal(actor.task, 'Installing tickets');
   scene.agentOff(event); scene.syncBuildCrews(snapshot);
   assert.strictEqual(actor.path, constructionPath);
   assert.equal(scene.timers.length, 0);
   actor.walks[0](); await flushArrivals();
-  assert.equal(actor.mode, 'work'); assert.equal(actor.task, 'Installing walls');
+  assert.equal(actor.mode, 'work'); assert.equal(actor.task, 'Installing tickets');
   scene.syncBuildCrews(sceneSnapshot());
   assert.equal(scene.constructionWorkers.size, 0); assert.equal(actor.hidden, true);
 });
 
-test('construction rejects old normal arrivals and resumes the active assignment only on release', async () => {
-  const scene = await sceneAdapters(), actor = scene.actors['bootstrap-runner'];
-  const event = sceneEvent(scene, 'bootstrap-runner');
+test('construction rejects old normal arrivals and resumes the active assignment only on release, for a row under a retired name', async () => {
+  // A 6.x activity row names stage-decomposer; the kitchen draws it as stage-planner, the cook-pizzas crew member.
+  assert.equal(LEGACY_ROLES['stage-decomposer'], 'stage-planner');
+  const scene = await sceneAdapters(), actor = scene.actors['stage-planner'];
+  const event = sceneEvent(scene, 'stage-planner', 'stage-planner', 'stage-decomposer');
   scene.agentOn(event);
   const oldArrival = actor.walks.at(-1);
-  scene.syncBuildCrews(sceneSnapshot(['setup-shop']));
+  scene.syncBuildCrews(sceneSnapshot(['cook-pizzas']));
   oldArrival(); await flushArrivals();
-  assert.equal(actor.task, 'Installing walls');
+  assert.equal(actor.task, 'Installing tickets');
   actor.walks.at(-1)(); await flushArrivals();
   scene.syncBuildCrews(sceneSnapshot());
   assert.equal(actor.mode, 'walk'); assert.equal(actor.hidden, false);

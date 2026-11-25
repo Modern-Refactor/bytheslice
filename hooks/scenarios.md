@@ -36,6 +36,7 @@ Every wired script exits 0 and none prints a deny decision (`hooks/test.sh` chec
 | checklist present, nested v5 (`## Pie N` headings) | **CONTEXT**: Prep progress, pie and slice counts via the dual-read lib helpers (`bts_unit_counts` / `bts_slice_counts`), first open pie |
 | checklist present, flat v4 (`Status:` table rows) | **CONTEXT**: Prep progress (if a `## Prep` section exists), stage counts from the `Status:` scan, next not-started row |
 | checklist present, session started by `resume` or `compact` | **CONTEXT**: the same summary (the hook has no `source` matcher), so a compacted session re-orients from it |
+| The last 500 rows of `.bytheslice/ledger.jsonl` or the kitchen activity log name a retired agent (`"agent":"bytheslice:spec-reviewer"`) | **CONTEXT**: one extra line naming the retired names found and pointing at `skills/sell-slice/references/legacy-agent-names.md`; current names, and old names only in rows older than the last 500, print nothing |
 | `BTS_HOOKS_DISABLED=1` | **PASS** - silent |
 
 ## Activity events: `kitchen-log.sh`

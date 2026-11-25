@@ -1,5 +1,5 @@
 <!-- skills/sell-slice/references/ui-sources.md -->
-<!-- Where the UI phase finds pre-built pages, blocks and components: the operator's own registry preferences first, else the public shadcn registry directory. Shared by block-composer, component-crafter, the implementer, modern-ux-expert and set-display-case. -->
+<!-- Where the UI phase finds pre-built pages, blocks and components: the operator's own registry preferences first, else the public shadcn registry directory. Shared by ui-builder, the implementer, ux-layout-designer and set-display-case. -->
 
 # UI sources
 

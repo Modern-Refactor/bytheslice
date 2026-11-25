@@ -37,17 +37,32 @@ You are the **rules-loader** for `/sell-slice`. Your job: read the project rules
    - `run.unattended`
    - `hitl.additionalCategories`
    - `rules.imports`
-   Every key above is resolved and returned even when the config file is absent: a key set nowhere comes back as its plugin default from [`bytheslice-config-schema.md`](../../setup-shop/references/bytheslice-config-schema.md). The orchestrator passes the `verification.*` values to `slice-tester` / `slice-verifier`, uses `flow.*` at the build-plan and library gates, uses `review.default` for unannotated pies, uses `delivery.*` to pick the closeout path and the slice time budget, passes `ui.*` to block-composer and component-crafter, passes `gates.*` to `slice-tester`, `slice-verifier`, the fixers and the UI review agents (an enabled gate that fails is a fix target, per [`quality-gates.md`](../references/quality-gates.md)), and under `run.unattended` resolves its own gates instead of asking.
-3. If the config file is malformed JSON, or a key holds a value outside its allowed set (for example `delivery.mode` other than `"pie-pr"` / `"merge-per-slice"` / `"ship-once"`, or a negative `delivery.sliceBudgetHours`), surface as HITL `prd_ambiguity`. Two exceptions: `gates.enforcement` with any value other than `"fix"` resolves to `"fix"` with one line in `overrides_applied` (there is no off switch), and an unknown class in `gates.advisory`, or `ci_integrity` or the manifest backstop listed there, is dropped with one line in `overrides_applied`. Never add a class to `gates.advisory` yourself.
+   Every key above is resolved and returned even when the config file is absent: a key set nowhere comes back as its plugin default from [`bytheslice-config-schema.md`](../../setup-shop/references/bytheslice-config-schema.md). The orchestrator passes the `verification.*` values to `slice-tester` / `slice-verifier`, uses `flow.*` at the build-plan and library gates, uses `review.default` for unannotated pies, uses `delivery.*` to pick the closeout path and the slice time budget, passes `ui.*` to `ui-builder`, passes `gates.*` to `slice-tester`, `slice-verifier`, the fixers and the UI review agents (an enabled gate that fails is a fix target, per [`quality-gates.md`](../references/quality-gates.md)), and under `run.unattended` resolves its own gates instead of asking.
+3. **Legacy `modelTiers` keys.** The agent roster was consolidated ([`legacy-agent-names.md`](../references/legacy-agent-names.md) holds the full old-to-new table), and an older config may still key `modelTiers` by a removed agent's camelCase name. Resolve each such key onto the agent that does that job now, and return only new-name keys:
+
+   | Legacy keys | Resolve to |
+   |---|---|
+   | `specReviewer`, `qualityReviewer` | `codeReviewer` |
+   | `discovery`, `checklistCurator` | `codeExplorer` |
+   | `breakUiRunner`, `designCritic` | `uiReviewer` |
+   | `complexityAssessor`, `stageDecomposer` | `stagePlanner` |
+   | `dbSchemaStageWriter` | `phasedPlanWriter` |
+   | `modernUxExpert`, `layoutArchitect` | `uxLayoutDesigner` |
+   | `blockComposer`, `componentCrafter` | `uiBuilder` |
+
+   **Raise-only rule.** A legacy key may only **raise** the agent's tier above its new default (the plugin default for the new name, from [`model-tier-guide.md`](../../setup-shop/references/model-tier-guide.md)), never lower it: `specReviewer: "sonnet"` alone leaves `codeReviewer` on `opus`, and `stageDecomposer: "sonnet"` leaves `stagePlanner` on `opus`, while `designCritic: "opus"` raises `uiReviewer` from `sonnet` to `opus`. A legacy key that would lower the tier is ignored: return the default and record one line in `overrides_applied` (for example `modelTiers.specReviewer: sonnet ignored, codeReviewer stays opus (legacy keys only raise)`). A key spelled with the new name sets any tier, lower included.
+
+   **Conflict rule.** A key spelled with the new name always beats every legacy key for that agent. When two legacy keys land on one agent and no new-name key is set, the higher tier wins (`opus` over `sonnet` over `haiku`), then the raise-only rule applies to it. Record one line in `overrides_applied` per agent a legacy key resolved onto (for example `modelTiers.qualityReviewer -> codeReviewer: opus (legacy key)`), naming the losing key when there was a conflict. A legacy key for a removed agent with no successor (`bootstrapRunner`, `proposalDrafter`, `consistencyChecker`) is dropped with one line in `overrides_applied`.
+4. If the config file is malformed JSON, or a key holds a value outside its allowed set (for example `delivery.mode` other than `"pie-pr"` / `"merge-per-slice"` / `"ship-once"`, or a negative `delivery.sliceBudgetHours`), surface as HITL `prd_ambiguity`. Two exceptions: `gates.enforcement` with any value other than `"fix"` resolves to `"fix"` with one line in `overrides_applied` (there is no off switch), and an unknown class in `gates.advisory`, or `ci_integrity` or the manifest backstop listed there, is dropped with one line in `overrides_applied`. Never add a class to `gates.advisory` yourself.
 
 ## Output Contract
 
 ```yaml
 resolved_config:
-  modelTiers:
-    discovery: <tier>
+  modelTiers:                               # new-name keys only; legacy keys already resolved (step 3)
+    codeExplorer: <tier>
     implementer: <tier>
-    qualityReviewer: <tier>
+    codeReviewer: <tier>
     # ... per agent slot
   stages:
     maxTasksPerStage: <int>

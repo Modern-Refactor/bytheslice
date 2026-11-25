@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { checklist, activity } = require('../fixtures/kitchen/data.js');
-const { sanitizeRow, parseActivity, parseChecklist, foldActivity, buildSnapshot, readKitchenState } = require('../../mcp/kitchen-state.js');
+const { sanitizeRow, parseActivity, parseChecklist, foldActivity, buildSnapshot, readKitchenState, stepOf, roleOfType } = require('../../mcp/kitchen-state.js');
 const base = { t: 1000, sid: 'session' };
 
 test('privacy allowlist strips unknown fields and fields inappropriate to the event', () => {
@@ -77,7 +77,7 @@ test('parent idle preserves pending dispatch attribution until a background acto
     { ...base, t: 1300, ev: 'SubagentStart', agent: 'bytheslice:slice-tester', aid: 'background' },
   ];
   const state = foldActivity(rows, 601201);
-  assert.deepEqual(state.active, [{ aid: 'background', type: 'bytheslice:slice-tester',
+  assert.deepEqual(state.active, [{ aid: 'background', type: 'bytheslice:slice-tester', role: 'slice-tester',
     label: 'P4 S4.2 test: background', pie: 4, slice: '4.2', startedAt: 1300, sid: 'session' }]);
   assert.equal(state.phase, 'open');
   for (const completion of [
@@ -169,4 +169,28 @@ test('reader folds rotation plus current safely and returns full snapshots for a
   const rotated = await readKitchenState(root, { now: 5000 });
   assert.deepEqual(rotated.active, []);
   assert.equal(rotated.phase, 'dawn');
+});
+
+test('an actor started under a retired agent name carries its new role; old names open and step as they did', () => {
+  const rows = [
+    { ...base, ev: 'SessionStart' },
+    { ...base, t: 1100, ev: 'SubagentStart', agent: 'bytheslice:spec-reviewer', aid: 'old-review' },
+    { ...base, t: 1200, ev: 'SubagentStart', agent: 'bytheslice:discovery', aid: 'old-recon' },
+  ];
+  const state = foldActivity(rows, 1300);
+  assert.deepEqual(state.active.map(actor => [actor.type, actor.role]),
+    [['bytheslice:spec-reviewer', 'code-reviewer'], ['bytheslice:discovery', 'code-explorer']]);
+  // Neither reviewer nor recon opens the line, under either name.
+  assert.equal(state.phase, 'dawn');
+  assert.equal(foldActivity([...rows, { ...base, t: 1250, ev: 'SubagentStart', agent: 'bytheslice:code-explorer', aid: 'x' }], 1300).phase, 'dawn');
+  // The UI builders open it under the old and the new name.
+  for (const agent of ['bytheslice:block-composer', 'bytheslice:ui-builder', 'bytheslice:ux-layout-designer']) {
+    assert.equal(foldActivity([rows[0], { ...base, t: 1100, ev: 'SubagentStart', agent, aid: 'b' }], 1300).phase, 'open', agent);
+  }
+  assert.equal(stepOf({ type: 'bytheslice:spec-reviewer' }), 'review');
+  assert.equal(stepOf({ type: 'bytheslice:code-reviewer' }), 'review');
+  assert.equal(stepOf({ type: 'bytheslice:ui-builder' }), 'build');
+  assert.equal(stepOf({ type: 'bytheslice:modern-ux-expert' }), null);
+  assert.equal(roleOfType('other:layout-architect'), 'ux-layout-designer');
+  assert.equal(roleOfType('bytheslice:implementer'), 'implementer');
 });

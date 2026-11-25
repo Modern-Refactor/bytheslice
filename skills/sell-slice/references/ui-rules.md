@@ -1,9 +1,9 @@
 <!-- skills/sell-slice/references/ui-rules.md -->
-<!-- The default UI rules every UI agent follows unless the project's design system or the operator says otherwise: modern minimal surfaces, popular web apps as the quality bar, layered surfaces with real contrast through tokens, descriptions in tooltips, tokens first with one look per meaning, fast input, no layout shift and consistent micro-copy. design-critic reviews against them. -->
+<!-- The default UI rules every UI agent follows unless the project's design system or the operator says otherwise: modern minimal surfaces, popular web apps as the quality bar, layered surfaces with real contrast through tokens, descriptions in tooltips, tokens first with one look per meaning, fast input, no layout shift and consistent micro-copy. ui-reviewer (mode critique) reviews against them. -->
 
 # Default UI rules
 
-These hold in every project unless its `docs/design-system.md` or the operator says otherwise. The agents that build UI (`modern-ux-expert`, `layout-architect`, `block-composer`, `component-crafter`, `state-illustrator`, the implementer on a UI task) follow them; `design-critic` reviews against them; `/set-display-case` writes the short form into the project rules file.
+These hold in every project unless its `docs/design-system.md` or the operator says otherwise. The agents that build UI (`ux-layout-designer`, `ui-builder`, `state-illustrator`, the implementer on a UI task) follow them; `ui-reviewer` in `mode: critique` reviews against them; `/set-display-case` writes the short form into the project rules file.
 
 ## 1. Modern, minimal, clean surfaces
 
@@ -15,7 +15,7 @@ These hold in every project unless its `docs/design-system.md` or the operator s
 
 ## 2. Popular web apps are the quality bar
 
-Before composing a surface, name one or two well-known apps that solve the same pattern and match their density, hierarchy and interaction model (for example Linear for lists and issue flows, Stripe or Vercel dashboards for tables and settings, Notion for editing, Raycast or Arc for command menus, Strava or Apple Fitness for activity logs). `modern-ux-expert` records them in the UX spec. The test for every finished surface: would it look at home next to those apps?
+Before composing a surface, name one or two well-known apps that solve the same pattern and match their density, hierarchy and interaction model (for example Linear for lists and issue flows, Stripe or Vercel dashboards for tables and settings, Notion for editing, Raycast or Arc for command menus, Strava or Apple Fitness for activity logs). `ux-layout-designer` records them in the UX spec. The test for every finished surface: would it look at home next to those apps?
 
 ## 3. Layered surfaces with real contrast, all through tokens
 
@@ -66,7 +66,7 @@ AI agents tend to scatter explanations across cards, section headers and form fi
 - The current location is always visible; primary navigation is at most two levels deep.
 - Every surface is reachable without hover alone, and every action has a visible label or an accessible name.
 
-## What design-critic checks
+## What ui-reviewer checks (mode critique)
 
 | Code | Finding when |
 |---|---|

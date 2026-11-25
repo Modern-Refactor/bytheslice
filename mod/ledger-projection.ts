@@ -3,6 +3,7 @@
 
 import type { EngineInterface } from 'claude-code'
 
+import { canonicalRole } from './policy.ts'
 import type {
   ActivityRow,
   LedgerRow,
@@ -32,7 +33,8 @@ export const FINDINGS_KEEP = 10
 export const STALE_MS = 6 * 60 * 60 * 1000
 
 export const GATES: readonly PassGate[] = ['slice-tester', 'slice-verifier']
-const FIXERS = new Set(['fix-attempter', 'debug-instrumenter'])
+/** The roles whose start shows a slice as fixing: the local fixers, UI review fixes included. */
+const FIXERS = new Set(['fix-attempter', 'ui-fix-attempter', 'debug-instrumenter'])
 
 /** The fixers a Workflow B fix loop dispatches: one start is one loop. */
 const LOOP_FIXERS: ReadonlySet<string> = new Set(['fix-attempter', 'ui-fix-attempter'])
@@ -46,10 +48,14 @@ export function stepOf(text: unknown): string | null {
   return /^P\d+ S\d+\.\d+ ([A-Za-z]+)\s*:/.exec(text.trim())?.[1]?.toLowerCase() ?? null
 }
 
-/** An agent type without its plugin prefix (`bytheslice:slice-tester` reads `slice-tester`). */
+/**
+ * An agent type without its plugin prefix (`bytheslice:slice-tester` reads
+ * `slice-tester`), a retired name read as the agent that replaced it, so an
+ * old row (`bytheslice:discovery`) counts as its new role (`code-explorer`).
+ */
 export function roleOf(type: string | undefined): string {
   if (typeof type !== 'string' || type === '') return 'agent'
-  return type.slice(type.lastIndexOf(':') + 1)
+  return canonicalRole(type)
 }
 
 /** The gate an agent type is, or null for any other role. */

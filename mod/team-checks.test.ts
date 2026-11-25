@@ -95,10 +95,11 @@ test('a teammate model is judged by the teammate role: opus and sonnet pass, hai
   expect(project.overrides).toEqual([{ setting: 'roles.teammate', value: ['haiku'], default: ['opus', 'sonnet'] }])
   expect(judgeTeammate({ ...facts, model: 'haiku' }, project.policy).findings).toEqual([])
   // Each reviewer role is a gate; a plain teammate is not.
-  for (const role of ['implementer', 'slice-tester', 'slice-verifier', 'spec-reviewer', 'quality-reviewer']) {
+  // code-reviewer is a gate, and so are the retired reviewer names it replaced.
+  for (const role of ['implementer', 'slice-tester', 'slice-verifier', 'code-reviewer', 'spec-reviewer', 'quality-reviewer']) {
     expect(judgeTeammate({ ...facts, subagentType: `bytheslice:${role}` }, DEFAULT_POLICY).findings.map(f => f.code)).toEqual(['gate-teamified'])
   }
-  expect(judgeTeammate({ ...facts, subagentType: 'bytheslice:discovery' }, DEFAULT_POLICY).findings).toEqual([])
+  expect(judgeTeammate({ ...facts, subagentType: 'bytheslice:code-explorer' }, DEFAULT_POLICY).findings).toEqual([])
 })
 
 test('a teammate first turn on a tier outside the teammate role warns model-drift once', async ($, on) => {

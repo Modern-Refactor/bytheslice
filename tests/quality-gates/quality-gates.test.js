@@ -99,14 +99,22 @@ test('every agent and skill that handles a gate failure links the rule and route
     'skills/sell-slice/agents/slice-verifier.md': /\*\*Every enabled-gate failure is a fix target\.\*\*/,
     'skills/sell-slice/agents/fix-attempter.md': /\*\*Fix enabled gates wherever the cause lives\.\*\*/,
     'skills/sell-slice/agents/frontend/ui-fix-attempter.md': /\*\*A failing gate is never an open design decision\.\*\*/,
-    'skills/sell-slice/agents/frontend/break-ui-runner.md': /\*\*A gate failure is never Fragile, never a decision\.\*\*/,
-    'skills/sell-slice/agents/frontend/design-critic.md': /\*\*A measured gate failure is a fix target, never a question\.\*\*/,
+    'skills/sell-slice/agents/frontend/ui-reviewer.md': [
+      /\*\*A gate failure is never Fragile, never a decision\.\*\*/,
+      /\*\*A measured gate failure is a fix target, never a question\.\*\*/,
+      /\*\*Gate-tagged findings are exempt from the filter and stay binding\*\*/,
+      /\*\*Every `P0` and `P1` is reported at any confidence, with its score shown\*\*/,
+    ],
+    'skills/sell-slice/agents/code-reviewer.md': [
+      /\*\*The filter never applies to gate failures or mechanical facts\.\*\*/,
+      /\*\*The filter never hides a stop\.\*\* Every `blocker` and every `major` is reported at any confidence/,
+    ],
     'skills/box-it-up/agents/ci-fix-attempter.md': /\*\*Scope is no exemption\.\*\*/,
   };
-  for (const [file, rule] of Object.entries(linked)) {
+  for (const [file, rules] of Object.entries(linked)) {
     const text = readText(file);
     assert.match(text, /quality-gates\.md/, `${file} links quality-gates.md`);
-    assert.match(text, rule, `${file} states the binding rule`);
+    for (const rule of [rules].flat()) assert.match(text, rule, `${file} states the binding rule`);
   }
 });
 
@@ -124,16 +132,15 @@ test('no retired wording lets an enabled-gate failure become a warning or a ques
   assert.match(pie, /\*\*Advisory findings are only listed\.\*\*/, 'the pie boundary lists advisory findings');
   assert.match(pie, /Every P0 and P1 finding not marked `advisory: true` goes straight to `ui-fix-attempter`/, 'ship-once skips advisory findings');
   assert.doesNotMatch(pie, /Every P0 and P1 finding goes straight to/);
-  assert.match(pie, /\*\*Every critique fix round re-measures\*\* \(gate rounds/, 'pie-boundary fixes are re-measured by design-critic');
+  assert.match(pie, /\*\*Every critique fix round re-measures\*\* \(gate rounds/, 'pie-boundary fixes are re-measured by ui-reviewer in critique mode');
   const box = readText('skills/box-it-up/SKILL.md');
   assert.match(box, /then \*\*classify each failed check\.\*\*/, 'box-it-up classifies failed checks');
   assert.match(box, /a failed required check is always binding/, 'a required check is never advisory');
   assert.match(box, /Only advisory failures left → CI counts as green/, 'advisory-only failures reach the merge step');
-  assert.match(readText('skills/sell-slice/agents/frontend/design-critic.md'), /- \*\*Mode\*\* \*\(optional, default `full`\)\*: `full`, or `recheck`/, 'design-critic has a recheck mode');
+  const uiReviewer = readText('skills/sell-slice/agents/frontend/ui-reviewer.md');
+  assert.equal((uiReviewer.match(/- \*\*Run\*\* \*\(optional, default `full`\)\*: `full`, or `recheck`/g) ?? []).length, 2, 'ui-reviewer has a recheck run in both modes');
   assert.doesNotMatch(readText('skills/box-it-up/agents/ci-fix-attempter.md'), /If the design system doesn't define the needed token, surface as HITL `creative_direction`\./);
-  for (const file of ['skills/sell-slice/agents/frontend/break-ui-runner.md', 'skills/sell-slice/agents/frontend/design-critic.md']) {
-    assert.match(readText(file), /gate: null \| accessibility \| design-system/, `${file} findings carry a gate tag`);
-  }
+  assert.equal((uiReviewer.match(/gate: null \| accessibility \| design-system/g) ?? []).length, 2, 'ui-reviewer findings carry a gate tag in both modes');
 });
 
 test('the rule doc and the new eval case use no em or en dashes', () => {

@@ -41,10 +41,12 @@ Not the right tool for:
 
 ## Subagent Roster
 
+Old agent names met in an earlier report or chat message (for example `design-critic`) mean the new agent and mode in [`../sell-slice/references/legacy-agent-names.md`](../sell-slice/references/legacy-agent-names.md).
+
 | Phase | Agent file | Model | Effort | Mode |
 |-------|-----------|-------|--------|------|
 | 2 (the walk itself) | [agents/platform-walker.md](agents/platform-walker.md) | sonnet | high | read-only |
-| 2b (design critique of the main surfaces) | [../sell-slice/agents/frontend/design-critic.md](../sell-slice/agents/frontend/design-critic.md) | sonnet | high | read-only (writes its report) |
+| 2b (design critique of the main surfaces, `mode: critique`) | [../sell-slice/agents/frontend/ui-reviewer.md](../sell-slice/agents/frontend/ui-reviewer.md) | sonnet | high | read-only (writes its report) |
 
 The walk itself runs as one sub-agent dispatch; sub-agents have isolated context, which is the right shape for an iterative click-through that would otherwise burn the orchestrator's context window on screenshots.
 
@@ -95,7 +97,7 @@ The sub-agent does the actual walk: route discovery, browser driving, screenshot
 
 ### Phase 2b: Critique the main surfaces
 
-After `platform-walker` returns, and while the dev server is still up, dispatch `bytheslice:design-critic` ([definition](../sell-slice/agents/frontend/design-critic.md); it wraps the vendored impeccable critique, see [`../sell-slice/references/vendor/README.md`](../sell-slice/references/vendor/README.md)). Critique the **main surfaces, not every route**: pick at most 5 from the walker's route list (the landing route of each primary user flow, the busiest data view, the primary form), skipping auth-walled, 404 and 500 routes. Pass:
+After `platform-walker` returns, and while the dev server is still up, dispatch `bytheslice:ui-reviewer` with `mode: "critique"` ([definition](../sell-slice/agents/frontend/ui-reviewer.md); in that mode it wraps the vendored impeccable critique, see [`../sell-slice/references/vendor/README.md`](../sell-slice/references/vendor/README.md)). Critique the **main surfaces, not every route**: pick at most 5 from the walker's route list (the landing route of each primary user flow, the busiest data view, the primary form), skipping auth-walled, 404 and 500 routes. Pass:
 
 - `scope: "inspect"` and those URLs, each with a one-line purpose
 - the walker's screenshot paths for them (the critic reuses them instead of re-capturing)
@@ -119,6 +121,7 @@ The sub-agent's return contract includes a markdown report path. Surface to the 
 - Screenshot directory path
 - Total routes walked / 404s found / auth-walled / dynamic-validation failures
 - The design critique: score per critiqued surface (out of the applicable maximum), its P0 and P1 findings, the critique report path, and its `open_questions` asked as short questions with a recommended answer each
+- One line with the critique's `filtered_out` count: P2/P3 heuristic findings below 80 confidence it left out (never a P0, P1 or gate finding)
 
 If `verdict: drifted` (any user-visible gap was found), prompt the operator:
 
@@ -187,7 +190,7 @@ Walk this at the end of every run. Do not report complete until every box is `[x
 - [ ] Platform-walker sub-agent dispatched and returned.
 - [ ] Structured return contract received with `status` and `verdict`.
 - [ ] Screenshot directory exists and is non-empty.
-- [ ] `design-critic` critiqued at most 5 main surfaces (or Phase 2b was skipped with a reason), with the `DEGRADED: single-context` banner and no launcher run.
+- [ ] `ui-reviewer` (`mode: critique`) critiqued at most 5 main surfaces (or Phase 2b was skipped with a reason), with the `DEGRADED: single-context` banner and no launcher run.
 
 ### 4. Cleanup done
 
@@ -230,6 +233,7 @@ design_critique:                  # null when Phase 2b was skipped
   scores: [{surface: <url>, total: <int>, max: <int>}]
   findings: [{id, severity, surface, problem, proposedFix, files}]   # P0 to P3, ranked
   open_questions: [{question, options, recommendation}]
+  filtered_out: <int>             # P2/P3 heuristic findings below 80 confidence, not listed
 artifacts:
   - <report path>
   - <screenshot dir>

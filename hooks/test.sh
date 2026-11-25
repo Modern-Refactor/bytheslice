@@ -249,6 +249,44 @@ else
 fi
 rm -rf "$FIX"
 
+# Retired agent names in the ledger or the kitchen log → one pointer line to
+# the legacy name table; current names (and a name that only ends like an old
+# one, scaffold-discovery) print nothing.
+FIX=$(mk_fixture)
+mkdir -p "$FIX/docs/plans" "$FIX/.bytheslice" "$FIX/.claude/.bytheslice-state/kitchen"
+printf '## Pie 2 - Editor\n\n### Slice 2.1 - Shell\n' > "$FIX/docs/plans/00_master_checklist.md"
+printf '%s\n' '{"v":1,"t":1,"sid":"s","ev":"verdict","agent":"bytheslice:code-reviewer"}' \
+  '{"v":1,"t":2,"sid":"s","ev":"edit","data":{"agent":"bytheslice:scaffold-discovery"}}' > "$FIX/.bytheslice/ledger.jsonl"
+CLAUDE_PROJECT_DIR=$FIX run_hook "$SHOP_STATUS" '{}'
+assert_exit "shop-status current names exit 0" 0
+assert_not_contains "shop-status current names print no legacy line" "legacy agent names"
+printf '%s\n' '{"v":1,"t":3,"sid":"s","ev":"verdict","agent":"bytheslice:spec-reviewer"}' >> "$FIX/.bytheslice/ledger.jsonl"
+printf '%s\n' '{"t":4,"ev":"SubagentStart","agent":"bytheslice:discovery","aid":"a"}' \
+  '{"t":5,"ev":"SubagentStart","agent":"bytheslice:discovery","aid":"b"}' > "$FIX/.claude/.bytheslice-state/kitchen/activity.jsonl"
+CLAUDE_PROJECT_DIR=$FIX run_hook "$SHOP_STATUS" '{}'
+assert_exit "shop-status legacy names exit 0" 0
+assert_contains "shop-status names the legacy agents found" "legacy agent names in the ledger or kitchen log (discovery, spec-reviewer)"
+assert_contains "shop-status points at the legacy name table" "skills/sell-slice/references/legacy-agent-names.md"
+if [ "$(printf '%s\n' "$LAST_OUT" | grep -c 'legacy agent names')" = 1 ]; then
+  PASS=$((PASS+1)); printf '  ✓ shop-status prints one legacy line\n'
+else
+  FAIL=$((FAIL+1)); FAILED_NAMES+=("shop-status prints one legacy line"); printf '  ✗ shop-status prints one legacy line\n'
+fi
+# Only recent rows count: once 500 newer rows follow the old names in every
+# log, the line stops (a 6.x ledger does not print it forever).
+rm -f "$FIX/.claude/.bytheslice-state/kitchen/activity.jsonl"
+for i in $(seq 1 500); do
+  printf '{"v":1,"t":%s,"sid":"s","ev":"verdict","agent":"bytheslice:code-reviewer"}\n' "$((i+10))"
+done >> "$FIX/.bytheslice/ledger.jsonl"
+CLAUDE_PROJECT_DIR=$FIX run_hook "$SHOP_STATUS" '{}'
+assert_exit "shop-status old legacy rows exit 0" 0
+assert_not_contains "shop-status ignores legacy names older than the last 500 rows" "legacy agent names"
+# A legacy name among the recent rows of one log still prints it.
+printf '%s\n' '{"t":9,"ev":"SubagentStart","agent":"bytheslice:design-critic","aid":"c"}' > "$FIX/.claude/.bytheslice-state/kitchen/activity.1.jsonl"
+CLAUDE_PROJECT_DIR=$FIX run_hook "$SHOP_STATUS" '{}'
+assert_contains "shop-status reads recent rows of the rotated kitchen log" "legacy agent names in the ledger or kitchen log (design-critic)"
+rm -rf "$FIX"
+
 # BTS_HOOKS_DISABLED → PASS silent
 FIX=$(mk_fixture)
 mkdir -p "$FIX/docs/plans"

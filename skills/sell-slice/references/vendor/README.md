@@ -18,5 +18,5 @@ Two third-party skills, copied verbatim at pinned commits. ByTheSlice agents rea
 
 | Wrapper agent | Reads | Dispatched by |
 |---|---|---|
-| [`break-ui-runner`](../../agents/frontend/break-ui-runner.md) | `break-ui/SKILL.md`, `break-ui/CATALOG.md` | `/sell-slice` Phase 5.1b and `/sell-pie` Workflow B, per frontend slice with data-bound UI |
-| [`design-critic`](../../agents/frontend/design-critic.md) | `impeccable/SKILL.src.md` (Modes only), `impeccable/reference/critique.md` (Assessment A, scoring, severity, personas), the matching `mode-*.md`, `craft-floor.md` (for `proposedFix` wording) | `/inspect-display` Phase 2b, the Library Preview Gate (Phase 4.5), and the `/sell-pie` pie boundary |
+| [`ui-reviewer`](../../agents/frontend/ui-reviewer.md), `mode: break` | `break-ui/SKILL.md`, `break-ui/CATALOG.md` | `/sell-slice` Phase 5.1b and `/sell-pie` Workflow B, per frontend slice with data-bound UI |
+| [`ui-reviewer`](../../agents/frontend/ui-reviewer.md), `mode: critique` | `impeccable/SKILL.src.md` (Modes only), `impeccable/reference/critique.md` (Assessment A, scoring, severity, personas), the matching `mode-*.md`, `craft-floor.md` (for `proposedFix` wording) | `/inspect-display` Phase 2b, the Library Preview Gate (Phase 4.5), and the `/sell-pie` pie boundary |

@@ -6,3 +6,4 @@ require('./parity.test.js');
 require('./activity.test.js');
 require('./policy-parity.test.js');
 require('./ledger-summary.test.js');
+require('./legacy-aliases.test.js');

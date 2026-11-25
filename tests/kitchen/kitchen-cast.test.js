@@ -19,7 +19,7 @@ function driver() {
   const roster = {
     implementer: { id: 'implementer', name: 'Ren', crew: 'line', tier: 'opus' },
     'implementer#2': { id: 'implementer#2', name: 'Dom', crew: 'line', tier: 'opus' },
-    discovery: { id: 'discovery', name: 'Pip', crew: 'line', tier: 'opus' },
+    'code-explorer': { id: 'code-explorer', name: 'Pip', crew: 'line', tier: 'opus' },
     'brief-analyzer': { id: 'brief-analyzer', name: 'Bree', crew: 'menu', tier: 'sonnet' },
   };
   const cast = window.createKitchenCastDriver({ roster, emit: (type, event) => events.push({ type, ...event }),
@@ -49,6 +49,16 @@ test('extra plugin instances use division helpers and nonplugin types use pass t
   assert.equal(events[3].character.type, 'Explore');
   assert.equal(events[4].character.id, 'helper:pass:2');
   assert.equal(events[6].character.crew, 'menu');
+});
+
+test('an actor draws as the agent that replaced a retired name, by role or by the legacy map', () => {
+  const { cast, events } = driver();
+  cast.apply(snapshot([row('one', 'bytheslice:discovery', { role: 'code-explorer' })]));
+  assert.equal(events[0].character.name, 'Pip');
+  assert.equal(events[0].character.type, 'code-explorer');
+  const second = driver();
+  second.cast.apply(snapshot([row('one', 'bytheslice:checklist-curator')]));
+  assert.equal(second.events[0].character.name, 'Pip');
 });
 
 test('completion reads the matching session result and defaults to Done', () => {

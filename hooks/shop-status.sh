@@ -130,4 +130,30 @@ if [ "$HAVE_NODE" = 1 ]; then
   node "$FORMAT_JS" check "$CHECKLIST" --label "$BTS_CHECKLIST_REL" 2>/dev/null
 fi
 
+# Retired agent names: a chat resumed from before the roster change, or a
+# ledger or kitchen log written then, names agents that now run as another
+# agent and mode. One pointer line at most, from a tail and a grep (no parse):
+# only the last LEGACY_TAIL rows of each log are read, so a ledger written on
+# 6.x stops printing the line once new rows push the old names out. The list
+# is every LEGACY_AGENT_ALIASES name no longer registered (mod/policy.ts);
+# tests/pass/legacy-aliases.test.js holds the two equal.
+LEGACY_NAMES='spec-reviewer|quality-reviewer|break-ui-runner|design-critic|discovery|checklist-curator|complexity-assessor|stage-decomposer|db-schema-stage-writer|modern-ux-expert|layout-architect|block-composer|component-crafter|bootstrap-runner|proposal-drafter|consistency-checker'
+LEGACY_LOGS=()
+for base in "$HOOK_CWD" "$(bts_root)"; do
+  [ -n "$base" ] && [ -d "$base" ] || continue
+  for rel in .bytheslice/ledger.jsonl .claude/.bytheslice-state/kitchen/activity.jsonl .claude/.bytheslice-state/kitchen/activity.1.jsonl; do
+    [ -f "$base/$rel" ] && LEGACY_LOGS+=("$base/$rel")
+  done
+done
+LEGACY_TAIL=500
+if [ "${#LEGACY_LOGS[@]}" -gt 0 ]; then
+  LEGACY_FOUND=$(for log in "${LEGACY_LOGS[@]}"; do tail -n "$LEGACY_TAIL" "$log" 2>/dev/null; done \
+    | grep -oE "\"agent\"[[:space:]]*:[[:space:]]*\"([A-Za-z0-9_-]+:)?($LEGACY_NAMES)\"" 2>/dev/null \
+    | sed -E 's/.*[":]([a-z-]+)"$/\1/' | sort -u | tr '\n' ' ' | sed 's/ $//; s/ /, /g')
+  if [ -n "$LEGACY_FOUND" ]; then
+    printf '  legacy agent names in the ledger or kitchen log (%s): they now run as other agents and modes; read old names through %s\n' \
+      "$LEGACY_FOUND" "$(cd "$SELF_DIR/.." && pwd)/skills/sell-slice/references/legacy-agent-names.md"
+  fi
+fi
+
 exit 0

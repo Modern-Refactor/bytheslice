@@ -16,6 +16,59 @@ All notable changes to **🍕 ByTheSlice** are tracked here, slice by slice. The
 
 ---
 
+## [7.0.0] - 2026-11-25
+
+**The agent roster drops from 52 to 42.** Sixteen agents merge into six or go away, the three feature-dev ideas land as modes of agents that already exist, and every project planned or started on 6.x keeps working: old names resolve to the new agents through a legacy alias layer in the Pass.
+
+### Changed
+
+- **Sixteen agents merge or go.** The workflows are unchanged; each old agent's job is now a mode or a step of the agent beside it in the table, and the 52 registered subagents become 42 (`.claude-plugin/plugin.json`, `DEFAULT_ROLES` in `mod/policy.ts`, `skills/setup-shop/references/model-tier-guide.md`, `docs/agents.md`, the kitchen cast and every manifest description follow).
+
+| Old agent | Now | Mode or input |
+|---|---|---|
+| `spec-reviewer`, `quality-reviewer` | `code-reviewer` (opus) | one pass per task covering spec and quality; one dispatch where there were two |
+| `break-ui-runner` | `ui-reviewer` (sonnet, effort high) | `mode: break` |
+| `design-critic` | `ui-reviewer` | `mode: critique` |
+| `discovery` | `code-explorer` (opus) | `mode: stage-recon` |
+| `checklist-curator` | `code-explorer` | `mode: slice-scope`, run together with stage-recon in one `/sell-slice` Phase 1 dispatch |
+| `complexity-assessor` | `stage-planner` (opus) | `mode: extend` |
+| `stage-decomposer` | `stage-planner` | `mode: full` |
+| `db-schema-stage-writer` | `phased-plan-writer` | `mode: db-schema` |
+| `modern-ux-expert`, `layout-architect` | `ux-layout-designer` (sonnet) | UX spec, then routes and layouts, then the breakpoint plan, serial inside one dispatch |
+| `block-composer`, `component-crafter` | `ui-builder` (sonnet) | registries first, then the gaps; `mode: revise` for Library Preview Gate notes |
+
+- **Unchanged on purpose:** `fix-attempter`, `ui-fix-attempter`, `debug-instrumenter` and `ci-fix-attempter` stay separate agents, so the local and CI fix-cap counters still count by agent type. `local-gates-runner` stays an agent in this release.
+- **Reviewer dispatch halves.** `/sell-slice` dispatches `code-reviewer` once per task instead of `spec-reviewer` then `quality-reviewer`; `/final-quality-check` dispatches one `code-reviewer` per sub-block. `/sell-pie` is unchanged (it dispatches no reviewers). The mechanical checks the old reviewers owned (file headers, commit subjects, `db/schema.sql` before any migration) stay checked.
+- **`ui-reviewer` keeps Edit.** Break mode extends the fixture module and recheck runs add a section to a report, so Edit stays in its tools (a whole-file rewrite risks truncating the fixture). Edit and Write touch only its own report files and, in break mode, the fixture module, never component source.
+- **The Pass counts the new writers.** An edit after a `slice-verifier` pass by `ui-fix-attempter`, `ui-builder` or `ux-layout-designer` (or an old name of one) now marks that file stale in the pane, as an implementer or fix-attempter edit did, and a `ui-fix-attempter` start shows the slice as fixing.
+- The kitchen viewer (`/dashboard`) draws the new cast. `mcp/kitchen-state.js` gives every actor a `role` field (the canonical new name) beside its raw `type`, and `kitchen.html` draws an actor by `role`, so an old activity log with old names still shows the new agent.
+
+### Added
+
+- **Code exploration at the start of `/special-order`.** `code-explorer` has a new `mode: feature-trace` that returns 5 to 10 key files, the entry points, the conventions and the risks for the requested feature; Phase 1 then asks questions about the feature itself (edge cases, error handling, scope boundaries), not only process questions.
+- **Design options for multi-stage features.** `stage-planner` has a new `mode: options` that returns 2 to 3 approaches (minimal change, clean architecture, pragmatic balance) with a recommendation. An interactive run asks the operator; an unattended run (`/pizza-party`, an autonomous run) auto-picks pragmatic balance and records why in the stage file and in a `bts_note`.
+- **An 80+ confidence filter on reviews that never hides a stop.** `code-reviewer` and `ui-reviewer` score each finding 0 to 100. Only low-stakes findings below 80 are left out: a `code-reviewer` nit, or a `ui-reviewer` critique P2 or P3 heuristic finding. Every blocker and major (and every critique P0 and P1) is reported at any confidence with its score shown; nits never block and never trigger a recheck. The filter never applies to gate failures (lint, typecheck, test, build, design-system grep) or to gate-tagged findings, which stay binding. Each conductor that summarizes those reviews (`/sell-slice` Progress Report, the `/sell-pie` pie critique note and boundary report, `/inspect-display`, `/final-quality-check` per sub-block) shows the `filtered_out` count in one line.
+- **A legacy alias layer in the Pass.** `LEGACY_AGENT_ALIASES` in `mod/policy.ts` maps every retired agent name to the agent and mode that replaced it, and every name lookup (roles, watchdog budgets, the gate and context role sets, expected markers, fix-kind counting, ledger projection, the kitchen actors) resolves through it, so old ledger rows and a spawn under an old name still project and count. Legacy `modelTiers` keys in `bytheslice.config.json` (camelCase old names such as `qualityReviewer`) and legacy `pass.spawnPolicy.roles` entries reach the new agent but may only raise its tier above the new default, never lower it: `specReviewer: "sonnet"` alone leaves `code-reviewer` on opus, and `stageDecomposer: "sonnet"` leaves `stage-planner` on opus. A legacy key that would lower the tier is ignored and recorded once as a `policy-override` note with `ignored: true`. When two old keys land on one agent the higher tier wins, and a key spelled with the new name sets any tier and always beats an old key. A watchdog budget under an old name (`budgetsMs.discovery`) gives `code-explorer` the longer of that value and its ten-minute default; a budget under the new name wins outright. `skills/sell-slice/references/legacy-agent-names.md` is the old-to-new table every conductor reads old names through.
+- **A session-start pointer.** `hooks/shop-status.sh` prints one line when the last 500 rows of the ledger or the kitchen activity log hold a legacy agent name, pointing at the legacy table. Older rows are not read, so a 6.x ledger stops printing it once new rows accumulate.
+- **Roster tests.** `tests/roster/roster.test.js` holds every "Now" target in the legacy table to a registered agent, every agent named in the table's "Planned, not yet" note to one still registered (and still its own role in the Pass), and every `skills/*/SKILL.md` and `commands/*.md` free of a dispatch of a removed agent name outside the legacy pointer lines.
+
+### Removed
+
+- **`bootstrap-runner`, `proposal-drafter` and `consistency-checker`.** No `SKILL.md` ever dispatched them; `/setup-shop` Step 1 bootstraps inline.
+
+### Migrating from 6.x
+
+- **Nothing to edit.** Old stage files, checklists, slice-completion goals, ledgers and `bytheslice.config.json` files keep working: a conductor reads an old agent name in any of them as the new agent and mode.
+- **Finish or restart an in-flight chat after upgrading.** Claude Code reloads plugin agents on restart, so a chat started before the upgrade still holds the old roster.
+- **Old ledger rows show two reviewer dispatches per task** (`spec-reviewer` and `quality-reviewer`) beside the new single `code-reviewer` ones. That is expected.
+- **`/sell-slice` Phase 1 is one dispatch.** The stage recon (was `discovery`) and the slice scope (was `checklist-curator`) now run inside one `code-explorer` dispatch, serially inside it, on opus, where they were two parallel dispatches (opus and sonnet).
+- **Two tier moves.** `stage-decomposer` (now `stage-planner`) and the slice-scope half of `code-explorer` (was `checklist-curator`, sonnet) move from sonnet to opus.
+- **Break-mode UI review effort moves from medium to high** (`ui-reviewer` runs at effort high in both modes; `break-ui-runner` ran at medium).
+- **Old `modelTiers` keys only raise.** A 6.x config that set an old reviewer or planner key to a lower tier (`specReviewer: "sonnet"`) no longer lowers the merged agent; set the new name (`codeReviewer`) to choose any tier.
+- **One input rename.** The `ui-reviewer` input `mode: full | recheck` is now `run: full | recheck`, because `mode` now picks `break` or `critique`.
+
+---
+
 ## [6.7.1] - 2026-11-18
 
 **The session-collision warning stops firing at sessions that claimed nothing.** A session making a workflow change with no claim was warned on nearly every Write and Edit that Slice 2.2 was being built by about 30 sessions, ended and long-idle chats included, and told to stop for a HITL.
