@@ -1,5 +1,5 @@
 // tests/setup-shop/detect-ci.test.js
-// Covers detect-ci.js: the four CI/CD baseline markers under the standard tier, the lean rule (build and smoke jobs, design-system-compliance only with a design system), quality.tier auto, and the legacy full-chain hook.
+// Covers detect-ci.js: the four CI/CD baseline markers under the standard tier, the lean rule (build and smoke jobs, design-system-compliance only with a design system), quality.tier auto, the legacy full-chain hook, the PR template in every location and letter case GitHub reads, and the other workflows listed when ci.yml is missing.
 'use strict';
 
 const test = require('node:test');
@@ -68,7 +68,8 @@ test('the standard fixture has all four markers and is ready', () => {
   assert.equal(out.ci_cd_ready, true);
   assert.equal(out.quality_tier, 'standard');
   assert.deepEqual(out.missing, []);
-  assert.deepEqual(out.markers.ci_yml, { exists: true, has_typecheck_job: true, has_lint_job: true, has_test_job: true, has_build_job: true, has_smoke_job: false });
+  assert.deepEqual(out.markers.ci_yml, { exists: true, file: '.github/workflows/ci.yml', has_typecheck_job: true, has_lint_job: true, has_test_job: true, has_build_job: true, has_smoke_job: false, other_workflows: [] });
+  assert.deepEqual(out.markers.pull_request_template_md, { exists: true, path: '.github/pull_request_template.md' });
   assert.deepEqual(out.markers.husky_pre_push, { exists: true, looks_canonical: true, legacy_full_chain: false });
 });
 
@@ -182,4 +183,55 @@ test('a missing or unreadable config reads as standard', (t) => {
   const r = detect(dir);
   assert.equal(r.quality_tier, 'standard');
   assert.match(r.notes[0], /not valid JSONC/);
+});
+
+test('the PR template is found in any letter case and every location GitHub reads', (t) => {
+  const cases = [
+    ['.github/PULL_REQUEST_TEMPLATE.md', '.github/PULL_REQUEST_TEMPLATE.md'],
+    ['.github/Pull_Request_Template.md', '.github/Pull_Request_Template.md'],
+    ['pull_request_template.md', 'pull_request_template.md'],
+    ['docs/PULL_REQUEST_TEMPLATE.md', 'docs/PULL_REQUEST_TEMPLATE.md'],
+    ['.github/PULL_REQUEST_TEMPLATE/feature.md', '.github/PULL_REQUEST_TEMPLATE/feature.md'],
+    ['docs/pull_request_template/bugfix.md', 'docs/pull_request_template/bugfix.md'],
+  ];
+  for (const [rel, expected] of cases) {
+    const dir = project(t);
+    fs.rmSync(path.join(dir, '.github/pull_request_template.md'), { force: true });
+    write(dir, rel, '## Summary\n');
+    const r = detect(dir);
+    assert.equal(r.markers.pull_request_template_md.exists, true, rel);
+    assert.equal(r.markers.pull_request_template_md.path, expected, rel);
+    assert.ok(!r.missing.includes('pull_request_template.md'), rel);
+  }
+  const dir = project(t);
+  fs.rmSync(path.join(dir, '.github/pull_request_template.md'), { force: true });
+  fs.mkdirSync(path.join(dir, '.github/PULL_REQUEST_TEMPLATE'));
+  assert.equal(detect(dir).markers.pull_request_template_md.exists, false, 'an empty template folder does not count');
+});
+
+test('with no ci.yml, the other workflows are listed with the gates they already run', (t) => {
+  const dir = project(t);
+  fs.rmSync(path.join(dir, '.github/workflows/ci.yml'));
+  write(dir, '.github/workflows/build.yml', 'name: Build\non: [push]\njobs:\n  checks:\n    runs-on: ubuntu-latest\n    steps:\n      - run: pnpm lint\n      - run: pnpm test\n');
+  write(dir, '.github/workflows/deploy.yaml', 'name: Deploy\non: [push]\njobs:\n  ship:\n    runs-on: ubuntu-latest\n    steps:\n      - run: vercel deploy\n');
+  const r = detect(dir);
+  assert.equal(r.markers.ci_yml.exists, false);
+  const others = Object.fromEntries(r.markers.ci_yml.other_workflows.map((w) => [w.file, w]));
+  assert.deepEqual(others['.github/workflows/build.yml'], { file: '.github/workflows/build.yml', has_lint_job: true, has_typecheck_job: false, has_test_job: true });
+  assert.deepEqual(others['.github/workflows/deploy.yaml'], { file: '.github/workflows/deploy.yaml', has_lint_job: false, has_typecheck_job: false, has_test_job: false });
+  assert.ok(others['.github/workflows/design-system-compliance.yml'], 'every other workflow is listed');
+  const note = r.notes.find((n) => n.startsWith('no ci.yml'));
+  assert.match(note, /\.github\/workflows\/build\.yml \(lint, test jobs\)/);
+  assert.match(note, /\.github\/workflows\/deploy\.yaml \(no lint, typecheck or test job\)/);
+  assert.match(note, /ask the operator before adding ci\.yml/);
+});
+
+test('ci.yaml counts as ci.yml, and a present ci file lists no other workflows', (t) => {
+  const dir = project(t);
+  fs.renameSync(path.join(dir, '.github/workflows/ci.yml'), path.join(dir, '.github/workflows/ci.yaml'));
+  const r = detect(dir);
+  assert.equal(r.markers.ci_yml.exists, true);
+  assert.equal(r.markers.ci_yml.file, '.github/workflows/ci.yaml');
+  assert.deepEqual(r.markers.ci_yml.other_workflows, []);
+  assert.ok(!r.notes.some((n) => n.startsWith('no ci.yml')));
 });

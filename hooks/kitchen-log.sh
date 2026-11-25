@@ -3,9 +3,20 @@
 #!/usr/bin/env bash
 #
 # Hook contract: reads the hook JSON envelope on stdin. Runs synchronously
-# on SessionStart, SubagentStart, SubagentStop, PreToolUse (Agent, Skill),
-# PostToolUse (Agent), UserPromptExpansion, and Stop, completing the local
-# append before return. Always exits 0 and prints nothing.
+# on SessionStart, SubagentStart, SubagentStop, PreToolUse (Agent, Skill,
+# and Bash running run-gates.js), PostToolUse (Agent, and Bash running
+# run-gates.js), UserPromptExpansion, and Stop, completing the local append
+# before return. Always exits 0 and prints nothing.
+#
+# The /final-quality-check gates: a Bash call whose command runs
+# skills/final-quality-check/scripts/run-gates.js with node (the pattern is
+# GATES_COMMAND in mod/relay.ts) writes a PreToolUse and a PostToolUse row
+# with agent "bytheslice:run-gates", aid the tool_use_id and a fixed label,
+# so the kitchen shows that phase as verifying. The PostToolUse row of a
+# background run carries no `ok` (the run is still going; the kitchen ends it
+# when run-gates writes its summary.json). The command itself is never copied.
+# These rows are a script step, not an agent: mod/ledger-projection.ts
+# (isScriptStep) leaves them out of live agents, rollups and slice signals.
 #
 # Row shape (fields an event does not carry are omitted, never null-padded):
 #   {"t":<epoch ms>,"sid":"..","ev":"..","agent":"..","aid":"..","label":"..",
@@ -58,6 +69,10 @@ INPUT="$(cat 2>/dev/null || true)"
 
 KL_MAX_BYTES=2097152
 KL_LABEL_MAX=120
+# The gates Bash call (mod/relay.ts GATES_COMMAND holds the same pattern).
+KL_GATES_RE='\bnode(\.exe)?\s+([^|;&\n]*?[\s/"'"'"'])?run-gates\.js([\s"'"'"';|&)]|$)'
+KL_GATES_AGENT='bytheslice:run-gates'
+KL_GATES_LABEL='final-quality-check local gates'
 
 # Row builder (jq). Inputs: the envelope on stdin, $fpie / $fslice (branch or
 # checklist attribution, empty when unresolved). Emits nothing for an event
@@ -72,19 +87,24 @@ select(length == 1 and (.[0] | type) == "object") | .[0]
 | (if (.tool_input | type) == "object" then .tool_input else {} end) as $tin
 | (if (.tool_response | type) == "object" then .tool_response else {} end) as $out
 | ($tool == "Agent") as $dispatch
+| (($ev == "PreToolUse" or $ev == "PostToolUse") and $tool == "Bash"
+   and (($tin.command // "") | type == "string" and test($gatesre))) as $gates
 | (($ev == "PreToolUse" or $ev == "PostToolUse") and $dispatch) as $agentcall
 | ($ev == "SubagentStart" or $ev == "SubagentStop") as $sub
 | select($ev == "SessionStart" or $ev == "Stop" or $ev == "UserPromptExpansion"
-    or $sub or $agentcall or ($ev == "PreToolUse" and $tool == "Skill"))
-| (if $agentcall then ($tin.description | str | if . then oneline | .[0:$max] else null end) else null end) as $lbl0
+    or $sub or $agentcall or $gates or ($ev == "PreToolUse" and $tool == "Skill"))
+| (if $gates then $gateslabel
+   elif $agentcall then ($tin.description | str | if . then oneline | .[0:$max] else null end) else null end) as $lbl0
 | (if $lbl0 == "" then null else $lbl0 end) as $lbl
 | ([($lbl // "") | capture("^P(?<p>[0-9]+) S(?<s>[0-9]+\\.[0-9]+)")] | first) as $cap
 | {
     t: (now * 1000 | floor),
     sid: (.session_id | str),
     ev: $ev,
-    agent: (if $sub then (.agent_type | str) elif $agentcall then ($tin.subagent_type | str) else null end),
-    aid: (if $sub then (.agent_id | str) elif ($agentcall and $ev == "PostToolUse") then ($out.agentId | str) else null end),
+    agent: (if $sub then (.agent_type | str) elif $agentcall then ($tin.subagent_type | str)
+            elif $gates then $gatesagent else null end),
+    aid: (if $sub then (.agent_id | str) elif ($agentcall and $ev == "PostToolUse") then ($out.agentId | str)
+          elif $gates then (.tool_use_id | str) else null end),
     "label": $lbl,
     skill: (if $ev == "UserPromptExpansion" then (.command_name | str)
             elif $tool == "Skill" then ($tin.skill | str) else null end),
@@ -95,6 +115,9 @@ select(length == 1 and (.[0] | type) == "object") | .[0]
                           elif . == "async_launched" then null
                           elif type == "string" and length > 0 then false
                           else null end)
+         elif ($gates and $ev == "PostToolUse") then
+           (if $tin.run_in_background == true or ($out.backgroundTaskId | str) then null
+            elif $out.interrupted == true then false else true end)
          else null end),
     pie: (if $cap then ($cap.p | tonumber) elif $fpie != "" then ($fpie | tonumber) else null end),
     slice: (if $cap then $cap.s elif $fslice != "" then $fslice else null end),
@@ -118,11 +141,14 @@ process.stdin.on("data", (c) => { d += c; }).on("end", () => {
   const tool = typeof j.tool_name === "string" ? j.tool_name : "";
   const inp = obj(j.tool_input), out = obj(j.tool_response);
   const agentcall = (ev === "PreToolUse" || ev === "PostToolUse") && tool === "Agent";
+  const gates = (ev === "PreToolUse" || ev === "PostToolUse") && tool === "Bash" &&
+    typeof inp.command === "string" && new RegExp(process.env.KL_GATES_RE || "$^").test(inp.command);
   const sub = ev === "SubagentStart" || ev === "SubagentStop";
   const post = agentcall && ev === "PostToolUse";
-  if (!(ev === "SessionStart" || ev === "Stop" || ev === "UserPromptExpansion" || sub || agentcall ||
+  if (!(ev === "SessionStart" || ev === "Stop" || ev === "UserPromptExpansion" || sub || agentcall || gates ||
         (ev === "PreToolUse" && tool === "Skill"))) return;
   let label = null;
+  if (gates) label = process.env.KL_GATES_LABEL || null;
   if (agentcall) {
     const raw = str(inp.description);
     if (raw !== null) {
@@ -139,12 +165,16 @@ process.stdin.on("data", (c) => { d += c; }).on("end", () => {
     else if (s === "async_launched") ok = null;
     else if (typeof s === "string" && s.length > 0) ok = false;
   }
+  if (gates && ev === "PostToolUse") {
+    if (inp.run_in_background === true || str(out.backgroundTaskId)) ok = null;
+    else ok = out.interrupted !== true;
+  }
   const row = {
     t: Date.now(),
     sid: str(j.session_id),
     ev: ev,
-    agent: sub ? str(j.agent_type) : (agentcall ? str(inp.subagent_type) : null),
-    aid: sub ? str(j.agent_id) : (post ? str(out.agentId) : null),
+    agent: sub ? str(j.agent_type) : (agentcall ? str(inp.subagent_type) : (gates ? process.env.KL_GATES_AGENT : null)),
+    aid: sub ? str(j.agent_id) : (post ? str(out.agentId) : (gates ? str(j.tool_use_id) : null)),
     label: label,
     skill: ev === "UserPromptExpansion" ? str(j.command_name) : (tool === "Skill" ? str(inp.skill) : null),
     tok: post ? int(out.totalTokens) : null,
@@ -270,9 +300,11 @@ if (hit) process.stdout.write(hit.pie + " " + (typeof hit.slice === "string" ? h
 kl_build() {
   if [ "$KL_ENGINE" = jq ]; then
     printf '%s' "$INPUT" | jq -cs --arg fpie "$1" --arg fslice "$2" \
-      --argjson max "$KL_LABEL_MAX" "$KL_JQ" 2>/dev/null
+      --argjson max "$KL_LABEL_MAX" --arg gatesre "$KL_GATES_RE" \
+      --arg gatesagent "$KL_GATES_AGENT" --arg gateslabel "$KL_GATES_LABEL" "$KL_JQ" 2>/dev/null
   else
     printf '%s' "$INPUT" | KL_PIE="$1" KL_SLICE="$2" KL_LABEL_MAX="$KL_LABEL_MAX" \
+      KL_GATES_RE="$KL_GATES_RE" KL_GATES_AGENT="$KL_GATES_AGENT" KL_GATES_LABEL="$KL_GATES_LABEL" \
       node -e "$KL_NODE" 2>/dev/null
   fi
 }

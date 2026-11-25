@@ -11,9 +11,9 @@ const CATALOG = path.join(__dirname, '..', 'references', 'known-services-catalog
 // Directories never searched for .env.example files.
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', 'out', 'coverage']);
 
-// Placeholder shapes (case-insensitive), the full list the verify step checks:
-// xxx (only x's), your_key_here, your-key-here, <placeholder>, <your_xxx>, TODO,
-// REPLACE_ME, changeme, insert_here, paste_here, sk-... (literal dots only),
+// Placeholder shapes (case-insensitive), the full list the verify step checks.
+// The literal list: xxx (only x's), your_key_here, your-key-here, <placeholder>, <your_xxx>,
+// TODO, REPLACE_ME, changeme, insert_here, paste_here, sk-... (literal dots only),
 // pk_test_xxx / sk_test_xxx / rk_test_xxx (Stripe stubs with an x suffix).
 const PLACEHOLDERS = [
   /^x{3,}$/i,
@@ -28,6 +28,44 @@ const PLACEHOLDERS = [
   /^(pk|sk|rk)_test_x+$/i,
 ];
 
+// The wider shapes: a `your_` / `your-` word (your_api_key_here, YOUR_SUPABASE_URL,
+// https://your-project.supabase.co), a value ending in `_here` / `-here`, a trailing
+// `...` (sk_test_...), any <...> or {{...}} inside the value, and replace_me spelled
+// any way. Each needs a word boundary, so a long random token that happens to hold
+// the letters is not flagged.
+const PLACEHOLDER_SHAPES = [
+  /(?:^|[^A-Za-z0-9])your[_-][A-Za-z0-9]/i,
+  /(?:^|[_\s-])here$/i,
+  /(?:\.{3}|\u2026)$/,
+  /<[^<>]+>/,
+  /\{\{[^{}]*\}\}/,
+  /(?:^|[^A-Za-z0-9])replace[_-]?me(?:$|[^A-Za-z0-9])/i,
+];
+
+// Placeholder words. A word fails the value only when it stands alone: it is the whole
+// value, or it is one segment of a value whose every other segment is filler (digits, a key
+// prefix such as sk, pk or re, or a credential noun such as test, live, key or token). So
+// `example`, `changeme123`, `sk_test_example` and `dummy-token` fail, while `my-example-app`
+// and `re_example_real123` pass: there the word is one part of a longer real identifier.
+// Segments split on anything but letters, digits and dots, so a host such as db.example.test
+// stays one segment. A segment of only x's (`re_xxxx_123`) is never real and fails anywhere.
+// TODO stays a whole-value match only, so `todo-list-api` is a real value.
+const PLACEHOLDER_WORD = /^(?:example|placeholder|dummy|changeme|replaceme)\d*$/i;
+const X_RUN = /^x{3,}\d*$/i;
+const FILLER_SEGMENT = /^(?:\d+|sk|pk|rk|re|whsec|phc|sb|test|live|api|key|keys|token|secret|value|id|url|uri|pass|password|pwd|dsn)$/i;
+
+function hasPlaceholderWord(value) {
+  const segments = value.split(/[^A-Za-z0-9.]+/).filter(Boolean);
+  if (segments.some((s) => X_RUN.test(s))) return true;
+  if (!segments.some((s) => PLACEHOLDER_WORD.test(s))) return false;
+  return segments.every((s) => PLACEHOLDER_WORD.test(s) || FILLER_SEGMENT.test(s));
+}
+
+// An example value a copied .env.local may keep without a question: a localhost http(s)
+// URL, a number or a boolean. Any other value equal to the .env.example value is reported
+// under unchanged_from_example (a question, never a failure by itself).
+const SAFE_DEFAULT = /^(?:https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/\S*)?|\d+(?:\.\d+)?|true|false)$/i;
+
 // Prefixes that mark a key as browser-public; stripped for a second catalog lookup.
 const PUBLIC_PREFIXES = ['NEXT_PUBLIC_', 'EXPO_PUBLIC_', 'VITE_', 'PUBLIC_'];
 
@@ -35,7 +73,43 @@ const OTHER = 'Other / Unknown';
 
 class UsageError extends Error {}
 
-const isPlaceholder = (value) => PLACEHOLDERS.some((re) => re.test(value));
+// A placeholder value: one of the fixed shapes, or a placeholder word standing alone.
+// Shape only: a value copied from .env.example is judged by sameAsExample, not here.
+function isPlaceholder(value) {
+  if (PLACEHOLDERS.some((re) => re.test(value))) return true;
+  if (PLACEHOLDER_SHAPES.some((re) => re.test(value))) return true;
+  return hasPlaceholderWord(value);
+}
+
+// A non-empty value identical to the same key's .env.example value (a safe default
+// excepted). Often a legitimate default (us-east-1, development, a local database URL),
+// so verify asks about it instead of failing it.
+function sameAsExample(value, exampleValue) {
+  return typeof exampleValue === 'string' && exampleValue !== '' && value === exampleValue && !SAFE_DEFAULT.test(value);
+}
+
+// A comment line never kept as a docstring: a commented-out assignment (`# KEY=value`,
+// `# export KEY="value"`) or a line that holds something shaped like a credential.
+const COMMENTED_ASSIGNMENT = /^(?:export\s+)?['"]?[A-Za-z_][A-Za-z0-9_]*['"]?\s*=/;
+const CREDENTIAL_SHAPES = [
+  /\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{8,}/,
+  /\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{6,}/,
+  /\b(?:whsec|re|phc|sb_secret|sb_publishable)_[A-Za-z0-9_-]{8,}/,
+  /\bgh[pousr]_[A-Za-z0-9]{16,}/,
+  /\bgithub_pat_[A-Za-z0-9_]{16,}/,
+  /\bxox[abposr]-[A-Za-z0-9-]{8,}/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\bAIza[0-9A-Za-z_-]{30,}/,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
+  /:\/\/[^/\s:@]+:[^/\s@]+@/,
+];
+function unsafeComment(body) {
+  if (COMMENTED_ASSIGNMENT.test(body)) return true;
+  if (CREDENTIAL_SHAPES.some((re) => re.test(body))) return true;
+  // A long token mixing letters and digits, outside a URL, reads as a key.
+  return body.split(/\s+/).some((word) => !word.includes('://') && word.length >= 24 && /^[A-Za-z0-9_+/=.-]+$/.test(word) && /[A-Za-z]/.test(word) && /\d/.test(word));
+}
 
 const rel = (root, p) => path.relative(root, p).split(path.sep).join('/') || '.';
 
@@ -63,7 +137,7 @@ function parseExample(text) {
     if (!trimmed) { comments = []; continue; }
     if (trimmed.startsWith('#')) {
       const body = trimmed.replace(/^#+\s?/, '').trim();
-      if (body) comments.push(body);
+      if (body && !unsafeComment(body)) comments.push(body);
       continue;
     }
     const parsed = parseLine(raw);
@@ -77,14 +151,27 @@ function parseExample(text) {
   return keys;
 }
 
-// Key -> "usable" | "empty" | "placeholder" for a .env.local. The value never leaves this function.
-function classifyLocal(text) {
+// Key -> value of a .env.example, for the same-as-example check only. Never returned by a command.
+function exampleValues(text) {
+  const values = new Map();
+  for (const raw of text.split(/\r?\n/)) {
+    const parsed = parseLine(raw);
+    if (parsed && !values.has(parsed.key)) values.set(parsed.key, parsed.value);
+  }
+  return values;
+}
+
+// Key -> "usable" | "empty" | "placeholder" | "unchanged" for a .env.local. The value never
+// leaves this function. `examples` (key -> .env.example value) marks a value copied over
+// unchanged; a placeholder shape wins over "unchanged", so a copied `your_key_here` still fails.
+function classifyLocal(text, examples = new Map()) {
   const status = new Map();
   for (const raw of text.split(/\r?\n/)) {
     const parsed = parseLine(raw);
     if (!parsed) continue;
     if (parsed.value === '') status.set(parsed.key, 'empty');
-    else status.set(parsed.key, isPlaceholder(parsed.value) ? 'placeholder' : 'usable');
+    else if (isPlaceholder(parsed.value)) status.set(parsed.key, 'placeholder');
+    else status.set(parsed.key, sameAsExample(parsed.value, examples.get(parsed.key)) ? 'unchanged' : 'usable');
   }
   return status;
 }
@@ -265,12 +352,17 @@ function checklist(root, catalogFile = CATALOG) {
 
 // Phase 5: every .env.local has each .env.example key with a non-empty, non-placeholder value.
 // Reports key names and paths only. A file whose every key is excused may be absent.
-function verify(root, excused = []) {
+// A key still holding its .env.example value is listed under unchanged_from_example, which
+// never fails status by itself; `confirmed` keys (the operator said the value is intended)
+// leave that list.
+function verify(root, excused = [], confirmed = []) {
   const excusedSet = new Set(excused);
+  const confirmedSet = new Set(confirmed);
   const inventory = scan(root);
   const missingFiles = [];
   const missingKeys = {};
   const placeholderKeys = {};
+  const unchangedKeys = {};
   for (const f of inventory.env_examples_found) {
     const required = f.keys.map((k) => k.name).filter((k) => !excusedSet.has(k));
     const localPath = path.join(root, f.expected_local_path);
@@ -278,35 +370,47 @@ function verify(root, excused = []) {
       if (required.length > 0) missingFiles.push(f.expected_local_path);
       continue;
     }
-    const status = classifyLocal(fs.readFileSync(localPath, 'utf8'));
+    const examples = exampleValues(fs.readFileSync(path.join(root, f.path), 'utf8'));
+    const status = classifyLocal(fs.readFileSync(localPath, 'utf8'), examples);
     const missing = required.filter((k) => !status.has(k) || status.get(k) === 'empty');
     const placeholder = required.filter((k) => status.get(k) === 'placeholder');
+    const unchanged = required.filter((k) => status.get(k) === 'unchanged' && !confirmedSet.has(k));
     if (missing.length) missingKeys[f.expected_local_path] = missing;
     if (placeholder.length) placeholderKeys[f.expected_local_path] = placeholder;
+    if (unchanged.length) unchangedKeys[f.expected_local_path] = unchanged;
   }
-  const pass = missingFiles.length === 0 && Object.keys(missingKeys).length === 0 && Object.keys(placeholderKeys).length === 0;
+  const noExamples = inventory.env_examples_found.length === 0;
+  const pass = !noExamples && missingFiles.length === 0 && Object.keys(missingKeys).length === 0 && Object.keys(placeholderKeys).length === 0;
   const out = {
     status: pass ? 'pass' : 'fail',
+    no_env_examples_found: noExamples,
     missing_files: missingFiles,
     missing_keys_per_file: missingKeys,
     placeholder_keys: placeholderKeys,
+    unchanged_from_example: unchangedKeys,
     files_checked: inventory.env_examples_found.map((f) => f.expected_local_path),
   };
   if (excused.length) out.excused_keys = [...excusedSet];
+  if (confirmed.length) out.confirmed_keys = [...confirmedSet];
   return out;
 }
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, root: process.cwd(), excused: [], catalog: CATALOG };
+  const opts = { command, root: process.cwd(), excused: [], confirmed: [], catalog: CATALOG };
+  const list = (v) => String(v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  let catalog = null;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
-    if (a === '--root') opts.root = path.resolve(rest[++i] ?? '');
-    else if (a === '--catalog') opts.catalog = path.resolve(rest[++i] ?? '');
-    else if (a === '--excused') opts.excused = String(rest[++i] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (a === '--root' || a === '--cwd') opts.root = path.resolve(rest[++i] ?? '');
+    else if (a === '--catalog') catalog = rest[++i] ?? '';
+    else if (a === '--excused') opts.excused = list(rest[++i]);
+    else if (a === '--confirmed') opts.confirmed = list(rest[++i]);
     else throw new UsageError(`unknown argument ${a}`);
   }
   if (!['scan', 'secrets', 'checklist', 'verify'].includes(command)) throw new UsageError(`unknown command ${command ?? '(none)'}`);
+  // A relative path argument is project-relative: resolved against --root.
+  if (catalog !== null) opts.catalog = path.resolve(opts.root, catalog);
   return opts;
 }
 
@@ -316,7 +420,7 @@ function main() {
     opts = parseArgs(process.argv.slice(2));
   } catch (err) {
     process.stderr.write(`env-inventory: ${err.message}\n`);
-    process.stderr.write('usage: env-inventory.js scan|secrets|checklist|verify [--root <dir>] [--catalog <file>] [--excused K1,K2]\n');
+    process.stderr.write('usage: env-inventory.js scan|secrets|checklist|verify [--root <dir>] [--catalog <file>] [--excused K1,K2] [--confirmed K1,K2]\n');
     process.exit(1);
   }
   let result;
@@ -324,7 +428,7 @@ function main() {
     if (opts.command === 'scan') result = scan(opts.root);
     else if (opts.command === 'secrets') result = secrets(opts.root);
     else if (opts.command === 'checklist') result = checklist(opts.root, opts.catalog);
-    else result = verify(opts.root, opts.excused);
+    else result = verify(opts.root, opts.excused, opts.confirmed);
   } catch (err) {
     // Messages name a file, never a value.
     process.stderr.write(`env-inventory: ${err.message}\n`);
@@ -333,6 +437,6 @@ function main() {
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
-module.exports = { PLACEHOLDERS, isPlaceholder, parseExample, classifyLocal, scan, secrets, readCatalog, serviceFor, checklist, verify };
+module.exports = { PLACEHOLDERS, PLACEHOLDER_SHAPES, isPlaceholder, sameAsExample, unsafeComment, parseExample, exampleValues, classifyLocal, scan, secrets, readCatalog, serviceFor, checklist, verify };
 
 if (require.main === module) main();

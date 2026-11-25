@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // skills/final-quality-check/scripts/run-gates.js
-// Runs the /final-quality-check Phase 4 local verification gates (lint, typecheck, check:design-system, unit/integration, build, the e2e suites) with the detected package manager, writes each gate's full log to a file, generates the first visual baselines when none exist, and prints only a JSON summary. Replaces the local-gates-runner agent.
+// Runs the /final-quality-check Phase 4 local verification gates (lint, typecheck, check:design-system, unit/integration, build, the e2e suites) with the detected package manager, writes each gate's full log to a file, generates the first visual baselines when none exist, and prints only a JSON summary. Replaces the local-gates-runner agent. Exit codes follow skills/sell-slice/references/script-contract.md: 0 ran (a failed gate is overall: fail in the JSON), 2 needs_human, 1 a real error (a usage error included).
 'use strict';
 
 const fs = require('node:fs');
@@ -29,10 +29,13 @@ const GATES = [
 class UsageError extends Error {}
 class Done extends Error {}
 
-const USAGE = 'usage: run-gates.js [--cwd <dir>] [--pm pnpm|npm|yarn|bun] [--tier standard|lean] [--design-system] [--skip-e2e] [--only <name,...>] [--log-dir <dir>] [--baselines-dir <dir>] [--first-run] [--tail-lines <n>] [--gate-timeout-ms <n>]';
+const USAGE = 'usage: run-gates.js [--cwd <project-root>] [--pm pnpm|npm|yarn|bun] [--tier standard|lean] [--design-system] [--skip-e2e] [--only <name,...>] [--log-dir <dir>] [--baselines-dir <dir>[,<dir>...]]... [--first-run] [--tail-lines <n>] [--gate-timeout-ms <n>]';
+
+// The default visual baselines folder (a single-app plan); a per-app E2E plan passes each app's folder.
+const DEFAULT_BASELINES = path.join('tests', 'visual', 'baselines');
 
 function parseArgs(argv) {
-  const out = { tier: 'standard', only: [], tailLines: 50, gateTimeoutMs: 0 };
+  const out = { tier: 'standard', only: [], baselinesDirs: [], tailLines: 50, gateTimeoutMs: 0 };
   const value = (i, flag) => {
     const v = argv[i];
     if (v === undefined || v.startsWith('--')) throw new UsageError(`${flag} needs a value`);
@@ -43,12 +46,12 @@ function parseArgs(argv) {
     if (a === '--design-system') out.designSystem = true;
     else if (a === '--skip-e2e') out.skipE2e = true;
     else if (a === '--first-run') out.firstRun = true;
-    else if (a === '--cwd') out.cwd = value(++i, a);
+    else if (a === '--cwd' || a === '--root') out.cwd = value(++i, a);
     else if (a === '--pm') out.pm = value(++i, a);
     else if (a === '--tier') out.tier = value(++i, a);
     else if (a === '--only') out.only.push(...value(++i, a).split(',').map((s) => s.trim()).filter(Boolean));
     else if (a === '--log-dir') out.logDir = value(++i, a);
-    else if (a === '--baselines-dir') out.baselinesDir = value(++i, a);
+    else if (a === '--baselines-dir') out.baselinesDirs.push(...value(++i, a).split(',').map((s) => s.trim()).filter(Boolean));
     else if (a === '--tail-lines') out.tailLines = Number(value(++i, a));
     else if (a === '--gate-timeout-ms') out.gateTimeoutMs = Number(value(++i, a));
     else throw new UsageError(`unknown argument ${a}`);
@@ -68,10 +71,21 @@ function detectPm(cwd) {
 }
 
 // `<pm> run <script>` for every manager: bare `bun test` is bun's own runner, and bare `npm lint` is not a script call.
-function commandFor(pm, script, extra = []) {
+// Extra arguments go after `--`. npm, pnpm, bun and Yarn 1 drop that first `--` and hand the rest to the
+// script; Yarn 2+ (berry) forwards everything after the script name as is, so it gets no `--` of its own.
+function commandFor(pm, script, extra = [], { yarnBerry = false } = {}) {
   const args = ['run', script];
-  if (extra.length) args.push(...(pm === 'npm' ? ['--', ...extra] : extra));
+  if (extra.length) args.push(...(pm === 'yarn' && yarnBerry ? extra : ['--', ...extra]));
   return args;
+}
+
+// A script that runs a Turborepo pipeline (`turbo run test:e2e:visual`, `turbo test:e2e:visual`) takes its own
+// flags first: the runner's flags must follow a second `--` so turbo passes them through to each task.
+const isTurbo = (command) => /(?:^|[\s;&|(])(?:npx\s+|pnpm\s+(?:exec\s+)?|yarn\s+|bunx\s+)?turbo(?:\s|$)/.test(String(command || ''));
+
+// The runner arguments for a script: turbo pipelines get the `--` passthrough.
+function runnerArgs(scriptCommand, flags) {
+  return isTurbo(scriptCommand) ? ['--', ...flags] : flags;
 }
 
 function listFiles(dir) {
@@ -105,8 +119,9 @@ function failedSpecs(file) {
   return [...specs];
 }
 
+// The one needs_human shape every skill script prints (script-contract.md); extra facts sit beside it.
 function needsHuman(category, question, context, extra = {}) {
-  return { needs_human: { hitl_category: category, hitl_question: question, hitl_context: context, ...extra } };
+  return { needs_human: { category, question, context }, ...extra };
 }
 
 function plan(args, scripts) {
@@ -131,13 +146,17 @@ function runGate(entry, ctx) {
   let extra = [];
   let baselinesBefore = null;
   let generating = false;
+  let emptyDirs = [];
   if (g.visual) {
-    baselinesBefore = listFiles(ctx.baselinesDir);
-    generating = args.firstRun || baselinesBefore.length === 0;
-    // Playwright fails a screenshot assertion that has no baseline, so the first run writes them.
-    if (generating) extra = ['--update-snapshots'];
+    const perDir = ctx.baselinesDirs.map((d) => listFiles(d));
+    baselinesBefore = perDir.flat();
+    emptyDirs = ctx.baselinesDirs.filter((d, i) => perDir[i].length === 0);
+    // Playwright fails a screenshot assertion that has no baseline, so the first run writes them. Only when every
+    // baselines folder is empty: --update-snapshots would rewrite the baselines an app already has.
+    generating = args.firstRun || emptyDirs.length === ctx.baselinesDirs.length;
+    if (generating) extra = runnerArgs(ctx.scripts[g.script], ['--update-snapshots']);
   }
-  const argv = commandFor(pm, g.script, extra);
+  const argv = commandFor(pm, g.script, extra, { yarnBerry: ctx.yarnBerry });
   const fd = fs.openSync(log, 'w');
   const started = Date.now();
   const res = spawnSync(pm, argv, {
@@ -170,8 +189,14 @@ function runGate(entry, ctx) {
   if (g.e2e && !passed) out.failed_specs = failedSpecs(log);
   if (g.visual) {
     const before = new Set(baselinesBefore);
-    out.new_baselines = listFiles(ctx.baselinesDir).filter((p) => !before.has(p)).map((p) => path.relative(cwd, p));
+    out.new_baselines = ctx.baselinesDirs.flatMap((d) => listFiles(d)).filter((p) => !before.has(p)).map((p) => path.relative(cwd, p));
+    out.baselines_dirs = ctx.baselinesDirs.map((d) => path.relative(cwd, d) || '.');
     if (passed && generating) out.status = 'baselines_generated';
+    if (!generating && emptyDirs.length) {
+      // Some apps have baselines and some do not: nothing is regenerated. Playwright's default mode writes the
+      // missing ones and fails those tests once; the next run compares them.
+      out.empty_baselines_dirs = emptyDirs.map((d) => path.relative(cwd, d) || '.');
+    }
   }
   return out;
 }
@@ -183,11 +208,19 @@ function main() {
   } catch (err) {
     if (!(err instanceof UsageError)) throw err;
     process.stderr.write(`run-gates: ${err.message}\n${USAGE}\n`);
-    process.exit(64);
+    process.exit(1);
   }
   const cwd = path.resolve(args.cwd || process.cwd());
-  // stdout carries this one JSON line and nothing else; exitCode (not exit()) lets it flush.
+  const logDir = path.resolve(cwd, args.logDir || path.join('.claude', '.bytheslice-state', 'gates'));
+  // stdout carries this one JSON line and nothing else; exitCode (not exit()) lets it flush. summary.json always
+  // holds the last result, needs_human included: the kitchen reads its time as the end of a background run.
   const emit = (obj, code) => {
+    try {
+      if (fs.existsSync(cwd)) {
+        fs.mkdirSync(logDir, { recursive: true });
+        fs.writeFileSync(path.join(logDir, 'summary.json'), `${JSON.stringify(obj, null, 2)}\n`);
+      }
+    } catch { /* The summary file is a convenience; stdout is the result. */ }
     process.stdout.write(`${JSON.stringify(obj)}\n`);
     process.exitCode = code;
     throw new Done();
@@ -206,7 +239,7 @@ function main() {
 
   const detected = args.pm ? { pm: args.pm, source: '--pm' } : detectPm(cwd);
   const pm = detected.pm;
-  const probe = spawnSync(pm, ['--version'], { cwd, stdio: 'ignore', shell: process.platform === 'win32' });
+  const probe = spawnSync(pm, ['--version'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' });
   if (probe.error || probe.status !== 0) {
     emit(needsHuman('external_credentials', `The ${pm} package manager is not installed or not on PATH, so the local gates cannot run. Install it (or name the right one) and rerun?`, `run-gates: ${pm} --version ${probe.error ? `failed: ${probe.error.code}` : `exited ${probe.status}`} (package manager from ${detected.source})`, { missing_tooling: [pm] }), 2);
   }
@@ -217,9 +250,10 @@ function main() {
     emit(needsHuman('prd_ambiguity', `package.json has no ${missing.map((s) => `"${s}"`).join(', ')} script, so ${missing.length === 1 ? 'that gate' : 'those gates'} cannot run. Rerun sub-block A to add ${missing.length === 1 ? 'it' : 'them'}, or say which command to use?`, `run-gates: ${args.tier} tier requires ${missing.join(', ')}`, { missing_scripts: missing }), 2);
   }
 
-  const logDir = path.resolve(cwd, args.logDir || path.join('.claude', '.bytheslice-state', 'gates'));
   fs.mkdirSync(logDir, { recursive: true });
-  const ctx = { pm, cwd, logDir, args, baselinesDir: path.resolve(cwd, args.baselinesDir || path.join('tests', 'visual', 'baselines')) };
+  const yarnBerry = pm === 'yarn' && Number(String(probe.stdout || '').trim().split('.')[0]) >= 2;
+  const baselinesDirs = (args.baselinesDirs.length ? args.baselinesDirs : [DEFAULT_BASELINES]).map((d) => path.resolve(cwd, d));
+  const ctx = { pm, cwd, logDir, args, scripts, yarnBerry, baselinesDirs };
 
   // Every gate runs, even after an earlier failure, so the conductor gets the full picture.
   const gates = entries.map((e) => (e.gate ? runGate(e, ctx) : { name: e.name, script: e.script, status: e.status, reason: e.reason }));
@@ -232,8 +266,8 @@ function main() {
     new_baselines: gates.flatMap((g) => g.new_baselines || []),
     gates,
   };
-  fs.writeFileSync(path.join(logDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
-  emit(summary, overall === 'pass' ? 0 : 1);
+  // Exit 0 either way: the gates ran, and a failed gate is overall: fail in the JSON. Exit 1 is a real error only.
+  emit(summary, 0);
 }
 
 if (require.main === module) {
@@ -244,4 +278,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { GATES, parseArgs, commandFor, detectPm, failedSpecs, plan };
+module.exports = { GATES, parseArgs, commandFor, runnerArgs, isTurbo, detectPm, failedSpecs, plan, needsHuman };

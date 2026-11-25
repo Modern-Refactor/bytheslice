@@ -1,10 +1,10 @@
 // mod/relay.test.ts
-// Unit tests for the logging relay: each classic event hands its envelope to kitchen-log.sh and lobby-signal.sh as a settings hook would, tool events only for their tools, and a script that fails never touches the event.
+// Unit tests for the logging relay: each classic event hands its envelope to kitchen-log.sh and lobby-signal.sh as a settings hook would, tool events only for their tools (and the local gates Bash call for the kitchen log), and a script that fails never touches the event.
 
 import { expect, test } from 'claude-code/testing'
 
 import { CHECKLIST_FIXTURE } from './fixtures/checklist.fixture.ts'
-import { KITCHEN_LOG, LOBBY_SIGNAL, RELAYS, scriptsFor } from './relay.ts'
+import { KITCHEN_LOG, LOBBY_SIGNAL, RELAYS, runsGates, scriptsFor } from './relay.ts'
 import { stage } from './testing.tsx'
 
 const scriptRuns = (runs: string[][]): string[] =>
@@ -23,6 +23,19 @@ test('tool events go only to their tools', () => {
   expect(scriptsFor('PreToolUse', { tool_name: 'Bash' })).toEqual([])
   expect(scriptsFor('PostToolUse', { tool_name: 'Skill' })).toEqual([])
   expect(scriptsFor('PermissionRequest', {})).toEqual([])
+})
+
+test('a Bash call reaches the kitchen log only when it runs the local gates script', () => {
+  const gates = { tool_name: 'Bash', tool_input: { command: 'node "/plugin/skills/final-quality-check/scripts/run-gates.js" --cwd /repo --pm pnpm --tier standard' } }
+  expect(runsGates(gates)).toBe(true)
+  expect(scriptsFor('PreToolUse', gates)).toEqual([KITCHEN_LOG])
+  expect(scriptsFor('PostToolUse', gates)).toEqual([KITCHEN_LOG])
+  expect(runsGates({ tool_name: 'Bash', tool_input: { command: 'node run-gates.js' } })).toBe(true)
+  for (const command of ['pnpm test', 'cat skills/final-quality-check/scripts/run-gates.js', 'sed -n 1,20p run-gates.js', 'cat skills/final-quality-check/scripts/run-gates.js.bak', 'node --test tests/final-quality-check/run-gates.test.js', 'node my-run-gates.jsx', 'grep run-gates.json x']) {
+    expect(scriptsFor('PreToolUse', { tool_name: 'Bash', tool_input: { command } })).toEqual([])
+  }
+  expect(scriptsFor('PreToolUse', { tool_name: 'Read', tool_input: { command: 'node run-gates.js' } })).toEqual([])
+  expect(scriptsFor('Stop', gates)).toEqual([KITCHEN_LOG, LOBBY_SIGNAL])
 })
 
 test('a Stop hands the envelope to both scripts on stdin, with its event name', async ($, on) => {

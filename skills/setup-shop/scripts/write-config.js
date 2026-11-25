@@ -311,13 +311,45 @@ function defaultsPath() {
   return process.env.BYTHESLICE_DEFAULTS_PATH || path.join(os.homedir(), '.bytheslice', 'defaults.json');
 }
 
+// The project root a relative path argument resolves against: --project-root (or --root), else the working directory.
+const rootOf = (opts, answers = {}) => path.resolve(opts.projectRoot ?? answers.projectRoot ?? process.cwd());
+const fromRoot = (opts, file, answers) => path.resolve(rootOf(opts, answers), file);
+
 function targetFor(flow, opts, answers) {
-  if (opts.target) return path.resolve(opts.target);
+  if (opts.target) return fromRoot(opts, opts.target, answers);
   if (flow === 'A') return path.resolve(defaultsPath());
-  const root = path.resolve(opts.projectRoot ?? answers.projectRoot ?? process.cwd());
+  const root = rootOf(opts, answers);
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new UsageError(`project root ${root} does not exist`);
   return path.join(root, 'bytheslice.config.json');
 }
+
+// Where the original goes before a merge or overwrite. Flow B and C: the project's gitignored
+// state folder, .claude/.bytheslice-state/backups/, never the project root. Flow A: beside the
+// defaults file (~/.bytheslice/), which no repository holds.
+const BACKUP_DIR = path.join('.claude', '.bytheslice-state', 'backups');
+function backupDirFor(flow, target, opts, answers) {
+  return flow === 'A' ? path.dirname(target) : path.join(rootOf(opts, answers), BACKUP_DIR);
+}
+
+// A timestamped backup name that never replaces an earlier backup: <file>.<UTC stamp>.bak.
+function backupPathIn(dir, target) {
+  const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z').replace(/[-:]/g, '');
+  const base = path.join(dir, `${path.basename(target)}.${stamp}`);
+  let candidate = `${base}.bak`;
+  for (let n = 2; fs.existsSync(candidate); n++) candidate = `${base}-${n}.bak`;
+  return candidate;
+}
+
+// The project backup folder ignores itself, so it stays out of git even in a project whose
+// .gitignore does not list .claude/ (Flow C).
+function ensureBackupDir(dir, flow) {
+  fs.mkdirSync(dir, { recursive: true });
+  const ignore = path.join(dir, '.gitignore');
+  if (flow !== 'A' && !fs.existsSync(ignore)) fs.writeFileSync(ignore, '# write-config.js backups: never committed\n*\n');
+}
+
+// The file is re-rendered from the template, so the operator's own comments do not survive a merge or overwrite.
+const COMMENTS_NOTE = 'hand-written comments are not carried over (the file is re-rendered from the example template)';
 
 function writeConfig(answers, opts = {}) {
   const flow = String(opts.flow ?? answers.flow ?? '').toUpperCase();
@@ -325,12 +357,15 @@ function writeConfig(answers, opts = {}) {
   const target = targetFor(flow, opts, answers);
   const exists = fs.existsSync(target);
   const label = flow === 'A' ? path.basename(target) === 'defaults.json' ? '~/.bytheslice/defaults.json' : target : 'bytheslice.config.json';
+  const backupDir = backupDirFor(flow, target, opts, answers);
   if (exists && !opts.overwrite && !opts.merge) {
+    const lead = flow === 'A' ? `${label} already exists.` : `This project already has ${label}.`;
+    const where = flow === 'A' ? `beside it in ${path.basename(backupDir) === '.bytheslice' ? '~/.bytheslice/' : backupDir}` : `under ${BACKUP_DIR.split(path.sep).join('/')}/`;
     throw new NeedsHuman(
       'destructive_operation',
-      flow === 'A' ? `${label} already exists. Overwrite, merge, or cancel?` : `This project already has ${label}. Overwrite, merge, or cancel?`,
-      `write-config: ${target} exists; rerun with --overwrite or --merge after the operator answers`,
-      { config_path: target, flow, overwrite_conflict: true },
+      `${lead} Overwrite, merge, or cancel? Either way ${COMMENTS_NOTE.replace(/ \(.*\)$/, '')}; the original is saved ${where} first.`,
+      `write-config: ${target} exists; rerun with --overwrite or --merge after the operator answers (the original is copied into ${backupDir} with a timestamped name before the write)`,
+      { config_path: target, backup_dir: backupDir, flow, overwrite_conflict: true },
     );
   }
 
@@ -338,12 +373,12 @@ function writeConfig(answers, opts = {}) {
   let config = {};
   if (exists && opts.merge) config = deepMerge(config, readJsonc(target) ?? {});
   if (opts.useDefaults) {
-    const defaults = readJsonc(path.resolve(opts.defaultsFile ?? defaultsPath()));
+    const defaults = readJsonc(opts.defaultsFile ? fromRoot(opts, opts.defaultsFile, answers) : path.resolve(defaultsPath()));
     if (!defaults) throw new UsageError('--use-defaults was given but the defaults file does not exist');
     if (flow !== 'A' && defaults.bootstrap) { delete defaults.bootstrap; ignored.push('bootstrap from defaults (Flow A only)'); }
     config = deepMerge(config, defaults);
   }
-  for (const base of opts.bases ?? []) config = deepMerge(config, readJsonc(path.resolve(base)) ?? {});
+  for (const base of opts.bases ?? []) config = deepMerge(config, readJsonc(fromRoot(opts, base, answers)) ?? {});
   config = deepMerge(config, fromAnswers);
   config.gates = { ...(isObject(config.gates) ? config.gates : {}), enforcement: 'fix' };
   for (const k of Object.keys(config.gates)) if (k !== 'enforcement' && Array.isArray(config.gates[k]) && config.gates[k].length === 0) delete config.gates[k];
@@ -357,17 +392,26 @@ function writeConfig(answers, opts = {}) {
     );
   }
 
-  const text = render(fs.readFileSync(opts.template ?? TEMPLATE, 'utf8'), config);
+  const template = opts.template ? fromRoot(opts, opts.template, answers) : TEMPLATE;
+  const text = render(fs.readFileSync(template, 'utf8'), config);
   let parsed;
   try { parsed = parseJsonc(text); } catch (err) { throw new Error(`rendered config is not valid JSONC (${err.message}); nothing was written`); }
   if (parsed.gates?.enforcement !== 'fix') throw new Error('rendered config lost gates.enforcement "fix"; nothing was written');
 
   if (flow === 'A') fs.mkdirSync(path.dirname(target), { recursive: true });
+  // Merge and overwrite both replace the file: keep the operator's original first.
+  let backup = null;
+  if (exists) {
+    ensureBackupDir(backupDir, flow);
+    backup = backupPathIn(backupDir, target);
+    fs.copyFileSync(target, backup);
+    notes.push(`${path.basename(target)} was ${opts.merge ? 'merged' : 'overwritten'}: ${COMMENTS_NOTE}; the original is at ${backup}`);
+  }
   const tmp = `${target}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, target);
 
-  const templateKeys = parseTemplate(fs.readFileSync(opts.template ?? TEMPLATE, 'utf8')).sections.map((s) => s.key);
+  const templateKeys = parseTemplate(fs.readFileSync(template, 'utf8')).sections.map((s) => s.key);
   const customized = Object.keys(config);
   return {
     config_path: target,
@@ -378,6 +422,7 @@ function writeConfig(answers, opts = {}) {
     overwrite_conflict: false,
     merged: Boolean(exists && opts.merge),
     overwrote: Boolean(exists && opts.overwrite && !opts.merge),
+    backup_path: backup,
     ignored,
     notes,
   };
@@ -394,7 +439,7 @@ function parseArgs(argv) {
     else if (a === '--answers') opts.answers = argv[++i];
     else if (a === '--flow') opts.flow = argv[++i];
     else if (a === '--target') opts.target = argv[++i];
-    else if (a === '--project-root') opts.projectRoot = argv[++i];
+    else if (a === '--project-root' || a === '--root') opts.projectRoot = argv[++i];
     else if (a === '--defaults-file') opts.defaultsFile = argv[++i];
     else if (a === '--template') opts.template = argv[++i];
     else if (!a.startsWith('--') && !opts.answers) opts.answers = a;
@@ -406,7 +451,7 @@ function parseArgs(argv) {
 function main() {
   try {
     const opts = parseArgs(process.argv.slice(2));
-    const raw = !opts.answers || opts.answers === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(opts.answers, 'utf8');
+    const raw = !opts.answers || opts.answers === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(fromRoot(opts, opts.answers), 'utf8');
     const answers = raw.trim() ? JSON.parse(raw) : {};
     if (!isObject(answers)) throw new UsageError('the answers must be a JSON object');
     process.stdout.write(`${JSON.stringify(writeConfig(answers, opts))}\n`);
@@ -416,7 +461,7 @@ function main() {
       process.exit(2);
     }
     process.stderr.write(`write-config: ${err.message}\n`);
-    if (err instanceof UsageError) process.stderr.write('usage: write-config.js --flow A|B|C [--answers <file>|-] [--project-root <dir>] [--target <file>] [--overwrite|--merge] [--use-defaults] [--base <file> ...]\n');
+    if (err instanceof UsageError) process.stderr.write('usage: write-config.js --flow A|B|C [--answers <file>|-] [--project-root <dir>] [--target <file>] [--overwrite|--merge] [--use-defaults] [--base <file> ...]\n(relative paths resolve against --project-root)\n');
     process.exit(1);
   }
 }

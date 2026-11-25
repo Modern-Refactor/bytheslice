@@ -34,7 +34,7 @@ Read all of these before beginning:
 
 ## Scripts
 
-Both mechanical steps are deterministic, zero-dependency Node scripts in `./scripts/`, run from this skill's folder. Each prints one JSON object on stdout. Exit 0 is a result; exit 2 prints `{"needs_human": {"category", "question", "context"}}`: ask the operator that question (in Flow A to C the plan-mode question gate is the prompt), then re-run with their answer; exit 1 is a real error: report the stderr line and stop.
+Both mechanical steps are deterministic, zero-dependency Node scripts in `./scripts/`, run by their absolute path (`node "<this-skill-directory>/scripts/<name>.js" ...` with `--project-root <project root>` for `write-config.js`, `--root <project root>` for `detect-ci.js`), never by changing into this skill's folder; a relative path argument (`--answers`, `--base`, `--target`) resolves against the project root. They follow the [script contract](../sell-slice/references/script-contract.md): each prints one JSON object on stdout. Exit 0 is a result; exit 2 prints `{"needs_human": {"category", "question", "context"}}`: the conductor raises it with `bts_hitl` and stops for the answer, asking the operator that question (in Flow A to C the plan-mode question gate is the prompt), then re-runs with their answer (unattended runs never ask: see Unattended runs); exit 1 is a real error: report the stderr line and stop.
 
 ## Flow Selection
 
@@ -149,7 +149,7 @@ Append to the new project's `.gitignore`:
 *.local.md
 ROADMAP.local.md
 
-# Per-user AI tooling workspaces
+# Per-user AI tooling workspaces (.claude/ also covers ByTheSlice state and backups in .claude/.bytheslice-state/)
 .claude/
 .cursor/
 .aider*
@@ -285,7 +285,7 @@ Write `gates.enforcement: "fix"` whatever the answers, plus `gates.advisory` and
 Write the answers to a JSON file in the session scratchpad (never in the project), then run:
 
 ```sh
-node scripts/write-config.js --flow <A|B|C> --answers <answers.json> [--project-root <project root>] [--use-defaults]
+node "<this-skill-directory>/scripts/write-config.js" --flow <A|B|C> --answers <answers.json> [--project-root <project root>] [--use-defaults]
 ```
 
 The answers file holds one key per question, each optional: `modelTiers` (`"defaults"`, `"manual"` or an object of agent tiers), `stages` (`{ "maxTasksPerStage", "targetFeatureStages" }`), `mcps` (the Q-mcps labels, or `["None"]`), `visualReview` (`{ "tools": [...], "vizzly": true|false }`), `hitl` (the `<name>: <prompt-hint>` lines), `rules` (the URLs), `bootstrap` (`{ "variant", "stack", "roadmapFile" }`, Flow A only), and `gates` (`{ "advisory": [...], "declared": [...] }`, a declared line read as `<name>: <command>` or a bare command). Any other section object (`verification`, `delivery`, `quality`, `run`, ...) passes through as given.
@@ -308,20 +308,22 @@ Apps that haven't run `/bytheslice:final-quality-check` lack the gates that `/by
 
 Check the working directory (Flow C) or the newly-scaffolded project root (Flow B) for these markers:
 
-First read `quality.tier` from `bytheslice.config.json` (default `standard`; `auto` resolves as [`/final-quality-check` "Quality tier"](../final-quality-check/SKILL.md) documents: `lean` for at most 3 feature pies and no payments work, otherwise `standard`, and `standard` when no master checklist exists yet). `node scripts/detect-ci.js --root <project root>` does this and checks every marker below; it returns `ci_cd_ready`, `quality_tier` (with `quality_tier_reason`), `design_system_present`, the per-marker `markers` detail (including `legacy_full_chain` for an old full-chain hook `/final-quality-check` can swap) and `missing`. It only detects, never scaffolds.
+First read `quality.tier` from `bytheslice.config.json` (default `standard`; `auto` resolves as [`/final-quality-check` "Quality tier"](../final-quality-check/SKILL.md) documents: `lean` for at most 3 feature pies and no payments work, otherwise `standard`, and `standard` when no master checklist exists yet). `node "<this-skill-directory>/scripts/detect-ci.js" --root <project root>` does this and checks every marker below; it returns `ci_cd_ready`, `quality_tier` (with `quality_tier_reason`), `design_system_present`, the per-marker `markers` detail (including `legacy_full_chain` for an old full-chain hook `/final-quality-check` can swap) and `missing`. It only detects, never scaffolds.
 
 | Marker | `standard`: what "present" looks like | `lean`: what "present" looks like |
 |---|---|---|
-| `.github/workflows/ci.yml` | Has `typecheck`, `lint`, and at least one test job (unit/integration/e2e) | Has `lint`, `typecheck`, `unit-tests`, `build` and `e2e-smoke` (smoke dropped only when E2E was skipped) |
+| `.github/workflows/ci.yml` (or `ci.yaml`) | Has `typecheck`, `lint`, and at least one test job (unit/integration/e2e) | Has `lint`, `typecheck`, `unit-tests`, `build` and `e2e-smoke` (smoke dropped only when E2E was skipped) |
 | `.github/workflows/design-system-compliance.yml` | Exists | Required only when a design system exists (`docs/design-system.md` is present, or the Prep display-case slice is `[x]`); otherwise not a marker |
 | `.husky/pre-push` | Exists and runs the slice tier (lint, typecheck, test, build); CI runs the full suite | Exists and runs the lean set (lint, typecheck, test, build, `test:e2e:smoke`) |
-| `.github/pull_request_template.md` | Exists | Exists (the lean checklist) |
+| The PR template | Exists in any location and letter case GitHub reads: `pull_request_template.md` in `.github/`, the repo root or `docs/`, or a `PULL_REQUEST_TEMPLATE/` folder there (`markers.pull_request_template_md.path` names it) | Exists (the lean checklist) |
 
 A lean project never needs `e2e.yml`, `e2e-coverage.yml`, `db-schema-drift.yml` or the `@feature` / `@regression-core` / `@visual` suites to count as ready.
 
 If every required marker is present and looks complete (all four under `standard`; three, or four with a design system, under `lean`), set `ci_cd_ready: true` and skip the rest of Step 3 (just announce: *"CI/CD baseline detected. Proceeding to Step 4."*).
 
 If any marker is missing, set `ci_cd_ready: false` and ask the user.
+
+When `ci.yml` is missing but other workflow files exist, `markers.ci_yml.other_workflows` lists each one with `has_lint_job`, `has_typecheck_job` and `has_test_job`, and a `notes` line says the same. If any of them already runs those gates, mention it in the question below and ask before scaffolding a second CI file beside it (under `run.unattended`, record the overlap and scaffold).
 
 ### Q-ci-cd-baseline (only if `ci_cd_ready: false`)
 
@@ -400,7 +402,7 @@ For Flow C:
 
 - **Flow.** `/pizza-party` picks it: Flow B from the parent folder for a new app (the scaffolder creates `<project-name>/`), Flow C inside an existing app.
 - **Step 1 questions** come from the ticket's **Answers**: Q-bootstrap-name is the app folder's name, Q-bootstrap-stack the **Stack** line (Next.js when it names none), Q-bootstrap-variant single-app unless the ticket says monorepo, Q-bootstrap-roadmap No.
-- **Step 2.** Skip Group 1 and Group 2, Q-gates included. Write `bytheslice.config.json` from the run config file `/pizza-party` passed, merged over the recommended Group 2 defaults (the run config's keys win), always with `gates.enforcement: "fix"`: `node scripts/write-config.js --flow <B|C> --project-root <root> --answers <run config> --merge` (the recommended Group 2 answers are the template's own defaults, so the run config is the only answers file; its sections pass through as given). An existing `bytheslice.config.json` is merged the same way (`--merge`), never asked about.
+- **Step 2.** Skip Group 1 and Group 2, Q-gates included. Write `bytheslice.config.json` from the run config file `/pizza-party` passed, merged over the recommended Group 2 defaults (the run config's keys win), always with `gates.enforcement: "fix"`: `node "<this-skill-directory>/scripts/write-config.js" --flow <B|C> --project-root <root> --answers <run config> --merge` (the recommended Group 2 answers are the template's own defaults, so the run config is the only answers file; its sections pass through as given). An existing `bytheslice.config.json` is merged the same way (`--merge`), never asked about.
 - **Step 3.** Skip Q-ci-cd-baseline: `/pizza-party` runs `/final-quality-check` itself in its Phase 5. Report `ci_cd_ready` only.
 - **Step 4** runs as usual (intake, then doctor).
 - Record each of these in the ticket's **Decisions made without you** and return without the next-step pointer's questions.
@@ -427,7 +429,7 @@ hitl_context: "Detected existing package.json at the working directory; user exp
 
 - **One umbrella for setup.** Don't fork the Bootstrap-only or Config-only behavior into separate skills; flow detection picks the right path.
 - **Never write `~/.bytheslice/defaults.json` without explicit consent** (Flow A's Q-Flow-A question gates this).
-- **Never overwrite an existing `bytheslice.config.json`** in a project root without surfacing it to the user first. `write-config.js` refuses on its own (exit 2) and asks: *"This project already has bytheslice.config.json. Overwrite, merge, or cancel?"* Under `run.unattended` it is merged instead (`--merge`), never asked (see Unattended runs).
+- **Never overwrite an existing `bytheslice.config.json`** in a project root without surfacing it to the user first. `write-config.js` refuses on its own (exit 2) and asks: *"This project already has bytheslice.config.json. Overwrite, merge, or cancel? Either way hand-written comments are not carried over; the original is saved under .claude/.bytheslice-state/backups/ first."* Both `--merge` and `--overwrite` re-render the file from the example template, so the script first copies the original to a timestamped `bytheslice.config.json.<stamp>.bak` under `.claude/.bytheslice-state/backups/` (gitignored: the folder carries its own `.gitignore`, so a Flow C project whose `.gitignore` lacks `.claude/` never commits it; never the project root) and says so in `notes` and `backup_path`. Flow A keeps its timestamped backup beside `~/.bytheslice/defaults.json`. Under `run.unattended` it is merged instead (`--merge`), never asked (see Unattended runs).
 - **Never delete anything.** Setup is additive.
 
 ---

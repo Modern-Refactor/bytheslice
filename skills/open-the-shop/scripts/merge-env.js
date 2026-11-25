@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 // skills/open-the-shop/scripts/merge-env.js
-// Merges provider-tooling env output into a .env.local without ever printing a value. Fills only keys the .env.example lists that are missing, empty or placeholder in the target; prints key names only.
+// Merges provider-tooling env output into a .env.local without ever printing a value. Fills only keys the .env.example lists that are missing, empty, placeholder or still the .env.example value in the target; prints key names only.
 'use strict';
 
 const fs = require('node:fs');
+const path = require('node:path');
+// The one placeholder rule, shared with the verify step.
+const { isPlaceholder, sameAsExample } = require('./env-inventory');
 
-const PLACEHOLDER = [
-  /^x{3,}$/i, /your[_-]key[_-]here/i, /^<.*>$/, /^todo$/i, /^replace_me$/i, /^changeme$/i,
-  /^insert_here$/i, /^paste_here$/i, /^sk-\.+$/, /^(pk|sk|rk)_test_x+$/i,
-];
-
+// A usage error is a real error (exit 1); exit 2 is reserved for needs_human (see script-contract.md).
 function usage(msg) {
   if (msg) process.stderr.write(`merge-env: ${msg}\n`);
-  process.stderr.write('usage: merge-env.js --example <.env.example> --target <.env.local> --source <file|-> [--map FROM=TO ...] [--consume]\n');
-  process.exit(2);
+  process.stderr.write('usage: merge-env.js --example <.env.example> --target <.env.local> --source <file|-> [--root <project root>] [--map FROM=TO ...] [--consume]\n');
+  process.exit(1);
 }
 
 function parseArgs(argv) {
@@ -26,9 +25,14 @@ function parseArgs(argv) {
       if (!from || !to) usage('--map needs FROM=TO');
       out.map[from] = to;
     } else if (['--example', '--target', '--source'].includes(a)) out[a.slice(2)] = argv[++i];
+    else if (a === '--root' || a === '--cwd') out.root = argv[++i];
     else usage(`unknown argument ${a}`);
   }
   if (!out.example || !out.target || !out.source) usage('missing a required argument');
+  // Relative paths are project-relative: resolved against --root (default: the working directory).
+  const root = path.resolve(out.root ?? process.cwd());
+  for (const k of ['example', 'target']) out[k] = path.resolve(root, out[k]);
+  if (out.source !== '-') out.source = path.resolve(root, out.source);
   return out;
 }
 
@@ -48,7 +52,11 @@ function parseEnv(text) {
   return env;
 }
 
-const unusable = (v) => v === undefined || v === '' || PLACEHOLDER.some((re) => re.test(v));
+// A target slot is fillable when it is missing, empty, a placeholder, or still the .env.example
+// value (a copy, not an operator-set value). A provider value is usable unless empty or a
+// placeholder shape: one equal to the example (a local default the provider reports) is real.
+const unusable = (v) => v === undefined || v === '' || isPlaceholder(v);
+const fillable = (v, exampleValue) => unusable(v) || sameAsExample(v, exampleValue);
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -63,9 +71,15 @@ function main() {
   const stillMissing = [];
   const lines = targetText ? targetText.replace(/\n?$/, '\n').split('\n').slice(0, -1) : [];
   for (const key of example.keys()) {
-    if (!unusable(target.get(key))) continue;
+    if (!fillable(target.get(key), example.get(key))) continue;
     const val = source.get(key);
-    if (unusable(val)) { stillMissing.push(key); continue; }
+    if (unusable(val)) {
+      // A copied example value with no provider value stays as is; verify asks about it.
+      if (!unusable(target.get(key))) continue;
+      stillMissing.push(key);
+      continue;
+    }
+    if (val === target.get(key)) continue;
     const quoted = /[\s#"'$`\\]/.test(val) ? `"${val.replace(/(["\\$`])/g, '\\$1')}"` : val;
     const idx = lines.findIndex((l) => l.replace(/^\s*export\s+/, '').trim().startsWith(`${key}=`));
     if (idx === -1) lines.push(`${key}=${quoted}`); else lines[idx] = `${key}=${quoted}`;
@@ -78,4 +92,4 @@ function main() {
   process.stdout.write(`${JSON.stringify({ target: args.target, written, still_missing: stillMissing })}\n`);
 }
 
-main();
+if (require.main === module) main();

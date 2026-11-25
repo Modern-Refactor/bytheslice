@@ -1,5 +1,5 @@
 // tests/setup-shop/write-config.test.js
-// Covers write-config.js: Flow A and Flow B/C targets, the example template's commented hints kept for untouched sections, gates.enforcement "fix" always written, valid JSONC, the overwrite refusal, merge, and the pasted-credential refusal.
+// Covers write-config.js: Flow A and Flow B/C targets, the example template's commented hints kept for untouched sections, gates.enforcement "fix" always written, valid JSONC, the overwrite refusal (which says comments are not kept), merge, the timestamped backup (under .claude/.bytheslice-state/backups/, beside the defaults file for Flow A) before any merge or overwrite, project-relative paths, and the pasted-credential refusal.
 'use strict';
 
 const test = require('node:test');
@@ -24,6 +24,10 @@ function run(args, { input, env } = {}) {
   const r = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', input, env: { ...process.env, ...env } });
   return { code: r.status, out: r.stdout, err: r.stderr, json: r.stdout ? JSON.parse(r.stdout) : null };
 }
+
+// Every backup file write-config left in a folder (its own .gitignore aside).
+const backupsIn = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.bak')).sort() : []);
+const BACKUP_NAME = /^bytheslice\.config\.json\.\d{8}T\d{6}Z(?:-\d+)?\.bak$/;
 
 // The lines of one top-level section block in a rendered or template file.
 const sectionText = (text, key) => new RegExp(`\\n  "${key}": \\{\\n[\\s\\S]*?\\n  \\},?\\n`).exec(text)?.[0];
@@ -98,13 +102,23 @@ test('an existing config is never overwritten without --overwrite: exit 2, destr
   const r = run(['--answers', ANSWERS, '--project-root', root]);
   assert.equal(r.code, 2);
   assert.equal(r.json.needs_human.category, 'destructive_operation');
-  assert.equal(r.json.needs_human.question, 'This project already has bytheslice.config.json. Overwrite, merge, or cancel?');
+  assert.deepEqual(Object.keys(r.json.needs_human).sort(), ['category', 'context', 'question'], 'the shared needs_human shape; extra facts sit beside it');
+  assert.equal(r.json.needs_human.question, 'This project already has bytheslice.config.json. Overwrite, merge, or cancel? Either way hand-written comments are not carried over; the original is saved under .claude/.bytheslice-state/backups/ first.');
   assert.equal(r.json.overwrite_conflict, true);
+  const backups = path.join(root, '.claude', '.bytheslice-state', 'backups');
+  assert.equal(r.json.backup_dir, backups);
   assert.equal(fs.readFileSync(file, 'utf8'), '{ "quality": { "tier": "lean" } }\n');
+  assert.ok(!fs.existsSync(backups), 'no backup until the operator answers');
 
   const over = run(['--answers', ANSWERS, '--project-root', root, '--overwrite']);
   assert.equal(over.code, 0, over.err);
   assert.equal(over.json.overwrote, true);
+  assert.equal(path.dirname(over.json.backup_path), backups);
+  assert.match(path.basename(over.json.backup_path), BACKUP_NAME);
+  assert.equal(fs.readFileSync(over.json.backup_path, 'utf8'), '{ "quality": { "tier": "lean" } }\n', 'the original is kept byte for byte');
+  assert.ok(over.json.notes.some((n) => /overwritten: hand-written comments are not carried over/.test(n) && n.includes(over.json.backup_path)), over.json.notes.join('\n'));
+  assert.deepEqual(fs.readdirSync(root).filter((f) => f.endsWith('.bak')), [], 'nothing is left in the project root');
+  assert.equal(fs.readFileSync(path.join(backups, '.gitignore'), 'utf8'), '# write-config.js backups: never committed\n*\n', 'the backup folder ignores itself');
   assert.deepEqual(parseJsonc(fs.readFileSync(file, 'utf8')).quality, {}, 'the old tier is gone; the block is back to its hint');
 });
 
@@ -112,9 +126,20 @@ test('--merge keeps the existing keys and lays the answers over them', (t) => {
   const root = tmp(t);
   const file = path.join(root, 'bytheslice.config.json');
   fs.writeFileSync(file, '{\n  // mine\n  "quality": { "tier": "lean" },\n  "stages": { "maxTasksPerStage": 3, "targetFeatureStages": "10-15" },\n}\n');
+  const original = fs.readFileSync(file, 'utf8');
   const r = run(['--answers', ANSWERS, '--project-root', root, '--merge']);
   assert.equal(r.code, 0, r.err);
   assert.equal(r.json.merged, true);
+  // The merge re-renders the file, so the operator's `// mine` comment is gone: the backup keeps it, and the notes say so.
+  assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /\/\/ mine/);
+  assert.equal(fs.readFileSync(r.json.backup_path, 'utf8'), original);
+  assert.ok(r.json.notes.some((n) => /merged: hand-written comments are not carried over/.test(n) && n.includes(r.json.backup_path)), r.json.notes.join('\n'));
+  // A second merge keeps the first backup and adds another.
+  const again = run(['--answers', ANSWERS, '--project-root', root, '--merge']);
+  assert.equal(again.code, 0, again.err);
+  assert.notEqual(again.json.backup_path, r.json.backup_path);
+  assert.equal(backupsIn(path.join(root, '.claude', '.bytheslice-state', 'backups')).length, 2);
+  for (const f of backupsIn(path.join(root, '.claude', '.bytheslice-state', 'backups'))) assert.match(f, BACKUP_NAME);
   const config = parseJsonc(fs.readFileSync(file, 'utf8'));
   assert.deepEqual(config.quality, { tier: 'lean' });
   assert.deepEqual(config.stages, { maxTasksPerStage: 5, targetFeatureStages: '10-15' });
@@ -148,4 +173,41 @@ test('a flow is required', (t) => {
   const r = run(['--project-root', tmp(t)], { input: '{}' });
   assert.equal(r.code, 1);
   assert.match(r.err, /flow must be A, B or C/);
+});
+
+test('a fresh write makes no backup', (t) => {
+  const root = tmp(t);
+  const r = run(['--answers', ANSWERS, '--project-root', root]);
+  assert.equal(r.json.backup_path, null);
+  assert.ok(!fs.existsSync(path.join(root, '.claude')));
+});
+
+test('Flow A keeps its backup beside the defaults file, timestamped, with no .gitignore', (t) => {
+  const home = tmp(t);
+  const target = path.join(home, '.bytheslice', 'defaults.json');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '{ "quality": { "tier": "lean" } }\n');
+  const ask = run([], { input: '{"flow":"A"}', env: { BYTHESLICE_DEFAULTS_PATH: target } });
+  assert.equal(ask.code, 2);
+  assert.equal(ask.json.needs_human.question, '~/.bytheslice/defaults.json already exists. Overwrite, merge, or cancel? Either way hand-written comments are not carried over; the original is saved beside it in ~/.bytheslice/ first.');
+  assert.equal(ask.json.backup_dir, path.dirname(target));
+  const r = run(['--overwrite'], { input: '{"flow":"A"}', env: { BYTHESLICE_DEFAULTS_PATH: target } });
+  assert.equal(r.code, 0, r.err);
+  assert.equal(path.dirname(r.json.backup_path), path.dirname(target));
+  assert.match(path.basename(r.json.backup_path), /^defaults\.json\.\d{8}T\d{6}Z(?:-\d+)?\.bak$/);
+  assert.equal(fs.readFileSync(r.json.backup_path, 'utf8'), '{ "quality": { "tier": "lean" } }\n');
+  assert.ok(r.json.notes.some((n) => n.includes(r.json.backup_path)));
+  assert.ok(!fs.existsSync(path.join(path.dirname(target), '.gitignore')));
+});
+
+test('relative --answers, --base and --target paths resolve against --project-root, wherever the script runs from', (t) => {
+  const root = tmp(t);
+  fs.copyFileSync(ANSWERS, path.join(root, 'answers.json'));
+  fs.writeFileSync(path.join(root, 'run-config.json'), JSON.stringify({ delivery: { mode: 'ship-once' } }));
+  fs.mkdirSync(path.join(root, 'out'), { recursive: true });
+  const r = spawnSync(process.execPath, [SCRIPT, '--answers', 'answers.json', '--base', 'run-config.json', '--target', 'out/bytheslice.config.json', '--root', root], { encoding: 'utf8', cwd: os.tmpdir() });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.config_path, path.join(root, 'out', 'bytheslice.config.json'));
+  assert.deepEqual(parseJsonc(fs.readFileSync(out.config_path, 'utf8')).delivery, { mode: 'ship-once' });
 });

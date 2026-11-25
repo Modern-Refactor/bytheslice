@@ -412,8 +412,9 @@ window.createKitchenCastDriver = function ({ roster, emit, demo, live }) {
     'block-composer': 'ui-builder', 'component-crafter': 'ui-builder',
     'e2e-installer': 'scaffold-writer', 'workflow-writer': 'scaffold-writer', 'husky-installer': 'scaffold-writer',
     'lint-config-writer': 'scaffold-writer', 'branch-protection-writer': 'scaffold-writer', 'framework-detector': 'scaffold-discovery',
-    // The oven tender is a scene role now (the full local gates run as a script, no agent); an old log row still draws her.
-    'local-gates-runner': 'oven-tender',
+    // The oven tender is a scene role now (the full local gates run as a script, no agent); an old log row still draws her,
+    // and so does a row of the gates script itself (agent `run-gates`, written by hooks/kitchen-log.sh for the Bash call).
+    'local-gates-runner': 'oven-tender', 'run-gates': 'oven-tender',
   };
   window.kitchenLegacyRoles = LEGACY;
   function assign(row) {
@@ -490,7 +491,7 @@ window.kitchenWords = (() => {
     board: 'review board, reviews the day', front: 'front of house' };
   const STEP = { build: 'building', test: 'testing', verify: 'verifying', fix: 'fixing', commit: 'committing', review: 'reviewing', plan: 'planning' };
   const STEP_OF_TYPE = { implementer: 'build', plater: 'build', 'ui-builder': 'build', 'ux-layout-designer': 'build', 'stage-planner': 'plan',
-    'state-illustrator': 'build', 'slice-tester': 'test', 'slice-verifier': 'verify', 'local-gates-runner': 'verify', 'fix-attempter': 'fix',
+    'state-illustrator': 'build', 'slice-tester': 'test', 'slice-verifier': 'verify', 'local-gates-runner': 'verify', 'run-gates': 'verify', 'oven-tender': 'verify', 'fix-attempter': 'fix',
     'debug-instrumenter': 'fix', 'ui-fix-attempter': 'fix', 'ui-reviewer': 'review', 'code-reviewer': 'review', 'phased-plan-writer': 'plan' };
   const clean = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 120);
   const soft = title => /^[A-Z][a-z]/.test(title) ? title[0].toLowerCase() + title.slice(1) : title;
@@ -4470,7 +4471,7 @@ const BASE_CREW = () => [
 ];
 const ambient = new Map();
 let liveVerifying = false;
-const verifyingIn = snapshot => (snapshot.active || []).some(row => /:(slice-verifier|local-gates-runner)$/.test(row.type || '') || /\bS\d+\.\d+\s+verify\b/i.test(row.label || ''));
+const verifyingIn = snapshot => (snapshot.active || []).some(row => /:(slice-verifier|local-gates-runner|run-gates)$/.test(row.type || '') || /\bS\d+\.\d+\s+verify\b/i.test(row.label || ''));
 function claimedByAgent(actor) { return [...liveAssignments.values()].some(entry => entry.active && entry.actor === actor) || constructionWorkers.has(actor.meta.id) || (shopper.active && shopper.actor === actor); }
 function releaseAmbient(actor) { const entry = ambient.get(actor.meta.id); if (!entry) return; ambient.delete(actor.meta.id); if (phaseActors.get(actor.meta.id) === entry) phaseActors.delete(actor.meta.id); cancelActor(actor); }
 function ambientGo(entry) {

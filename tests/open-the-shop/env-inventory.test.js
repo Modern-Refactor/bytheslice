@@ -1,5 +1,5 @@
 // tests/open-the-shop/env-inventory.test.js
-// Covers env-inventory.js: the .env.example scan, the CI secrets list, the catalog-grouped checklist, the full placeholder list, and the verify pass that never prints a value.
+// Covers env-inventory.js: the .env.example scan, the CI secrets list, the catalog-grouped checklist, the full placeholder list, the verify pass that never prints a value (unchanged_from_example and --confirmed included), and merge-env's use of the same rule.
 'use strict';
 
 const test = require('node:test');
@@ -35,7 +35,7 @@ function writeLocals(dir, overrides = {}) {
   const web = {
     NEXT_PUBLIC_SUPABASE_URL: SECRETS.NEXT_PUBLIC_SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: SECRETS.SUPABASE_SERVICE_ROLE_KEY,
-    STRIPE_SECRET_KEY: 'sk_test_fixtureRealLooking0123',
+    STRIPE_SECRET_KEY: 'sk_' + 'test_fixtureRealLooking0123',
     OPENAI_API_KEY: 'sk-fixtureopenai0123456789',
     MYSTERY_TOKEN: 'mystery-fixture-value-42',
     NEXT_PUBLIC_POSTHOG_KEY: SECRETS.NEXT_PUBLIC_POSTHOG_KEY,
@@ -71,8 +71,8 @@ test('scan finds every .env.example at the root and under apps/ and packages/, k
 });
 
 test('docstrings keep at most the 3 comment lines above a key', () => {
-  const keys = inv.parseExample('# one\n# two\n# three\n# four\nKEY=1\n#COMMENTED=x\n\nOTHER\n');
-  assert.deepEqual(keys, [{ name: 'KEY', docstring: 'two three four' }, { name: 'OTHER' }]);
+  const keys = inv.parseExample('# one\n# two\n# three\n# four\nKEY=1\n#COMMENTED=x\nOTHER\n');
+  assert.deepEqual(keys, [{ name: 'KEY', docstring: 'two three four' }, { name: 'OTHER' }], 'a commented-out KEY=value is never a docstring');
 });
 
 test('scan reports no_env_examples_found on a repo with none', (t) => {
@@ -142,6 +142,144 @@ test('every placeholder shape the verifier lists is caught, and real-looking val
   }
 });
 
+test('the wider placeholder shapes are caught: your_ words, _here, trailing dots, template braces, placeholder words', () => {
+  for (const v of ['your_api_key_here', 'your-anon-key', 'YOUR_SUPABASE_URL', 'https://your-project.supabase.co', 'sk_test_...', 'pk_' + 'live_\u2026',
+    'placeholder', 'example', 'dummy', 'changeme123', 'Example', 'sk_test_example', 'dummy-token', 'replace-me', 'REPLACEME', 'api_key_here',
+    'Bearer <token>', 'https://{{PROJECT}}.supabase.co', 're_xxxx_123']) {
+    assert.ok(inv.isPlaceholder(v), `${v} is a placeholder`);
+  }
+});
+
+test('real-shaped keys stay accepted, even with a common word inside a random token', () => {
+  for (const v of ['sk_' + 'live_51H8xYzAbCdEfGhIjKlMnOp', 'pk_' + 'live_51HexampleDummyX9aB', 'whsec_hereAbc123def456', 're_123_todoList', 'phc_youroKey9QwErTy',
+    'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.c2lnbmF0dXJl', 'https://fixture-app.example.test', 'postgresql://app:pw-7a6b5c@db.example.test/app',
+    'ghp_yourxexample1234567890abcdEFGH', 'https://abcdefghijklmnop.supabase.co', 'AKIAEXAMPLE0123456789', 'my-dummyproof-service']) {
+    assert.ok(!inv.isPlaceholder(v), `${v} is not a placeholder`);
+  }
+});
+
+test('a placeholder word fails only standing alone, never inside a longer identifier', () => {
+  for (const v of ['example', 'your-example-here', 'sk_test_example', 'dummy-token', 'test_placeholder_key', 'changeme-42']) {
+    assert.ok(inv.isPlaceholder(v), `${v} is a placeholder`);
+  }
+  for (const v of ['my-example-app', 're_example_real123', 'example-service-eu', 'acme_dummy_loader']) {
+    assert.ok(!inv.isPlaceholder(v), `${v} is not a placeholder`);
+  }
+});
+
+test('a value identical to the .env.example value is not a placeholder; sameAsExample marks it, a safe default excepted', () => {
+  assert.ok(!inv.isPlaceholder('anon-key-goes-in-this-slot'));
+  assert.ok(inv.sameAsExample('anon-key-goes-in-this-slot', 'anon-key-goes-in-this-slot'));
+  assert.ok(!inv.sameAsExample('anon-key-goes-in-this-slot', 'something-else'));
+  assert.ok(!inv.sameAsExample('anon-key-goes-in-this-slot', ''));
+  for (const v of ['http://localhost:3000', 'http://127.0.0.1:54321/rest', '3000', 'true']) assert.ok(!inv.sameAsExample(v, v), `${v} is a safe default`);
+});
+
+// Legitimate defaults a copied .env.local keeps as is.
+const DEFAULTS = {
+  AWS_REGION: 'us-east-1',
+  NODE_ENV: 'development',
+  LOG_LEVEL: 'info',
+  COMPANY_NAME: 'Acme',
+  REDIS_URL: 'redis://localhost:6379',
+  LOCAL_DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:54322/postgres',
+};
+
+function withDefaults(dir) {
+  const lines = Object.entries(DEFAULTS).map(([k, v]) => `${k}=${v}`).join('\n');
+  fs.appendFileSync(path.join(dir, 'packages/api/.env.example'), `${lines}\n`);
+  writeLocals(dir);
+  fs.appendFileSync(path.join(dir, 'packages/api/.env.local'), `${lines}\n`);
+}
+
+test('verify passes legitimate defaults copied from .env.example and lists them under unchanged_from_example, key names only', (t) => {
+  const dir = repo(t);
+  withDefaults(dir);
+  const r = run(dir, 'verify');
+  assert.equal(r.code, 0);
+  assert.equal(r.json.status, 'pass');
+  assert.deepEqual(r.json.placeholder_keys, {});
+  assert.deepEqual(r.json.unchanged_from_example, { 'packages/api/.env.local': Object.keys(DEFAULTS) });
+  for (const v of Object.values(DEFAULTS)) assert.ok(!r.out.includes(v), `verify printed ${v}`);
+});
+
+test('verify --confirmed clears the confirmed keys from unchanged_from_example', (t) => {
+  const dir = repo(t);
+  withDefaults(dir);
+  const all = run(dir, 'verify', '--confirmed', Object.keys(DEFAULTS).join(','));
+  assert.equal(all.json.status, 'pass');
+  assert.deepEqual(all.json.unchanged_from_example, {});
+  assert.deepEqual(all.json.confirmed_keys, Object.keys(DEFAULTS));
+  const some = run(dir, 'verify', '--confirmed', 'AWS_REGION,NODE_ENV');
+  assert.deepEqual(some.json.unchanged_from_example, { 'packages/api/.env.local': ['LOG_LEVEL', 'COMPANY_NAME', 'REDIS_URL', 'LOCAL_DATABASE_URL'] });
+});
+
+test('identifier values with a placeholder word inside pass verify', (t) => {
+  const dir = repo(t);
+  writeLocals(dir, { MYSTERY_TOKEN: 'my-example-app', RESEND_API_KEY: 're_example_real123' });
+  const r = run(dir, 'verify');
+  assert.equal(r.json.status, 'pass');
+  assert.deepEqual(r.json.placeholder_keys, {});
+});
+
+test('a placeholder copied from .env.example still fails, as a placeholder not an unchanged value', (t) => {
+  const dir = repo(t);
+  writeLocals(dir, { STRIPE_SECRET_KEY: 'sk_test_xxx', NEXT_PUBLIC_SUPABASE_URL: 'https://your-project.supabase.co', MYSTERY_TOKEN: 'example' });
+  const r = run(dir, 'verify', '--confirmed', 'STRIPE_SECRET_KEY,NEXT_PUBLIC_SUPABASE_URL,MYSTERY_TOKEN');
+  assert.equal(r.json.status, 'fail');
+  assert.deepEqual(r.json.placeholder_keys, { 'apps/web/.env.local': ['NEXT_PUBLIC_SUPABASE_URL', 'STRIPE_SECRET_KEY', 'MYSTERY_TOKEN'] });
+  assert.deepEqual(r.json.unchanged_from_example, {});
+});
+
+test('verify lists a non-default value copied unchanged from the .env.example, by key name only', (t) => {
+  const dir = repo(t);
+  const same = 'copied-from-the-example-file-1234';
+  fs.appendFileSync(path.join(dir, 'packages/api/.env.example'), `QUEUE_TOKEN=${same}\n`);
+  writeLocals(dir);
+  fs.appendFileSync(path.join(dir, 'packages/api/.env.local'), `QUEUE_TOKEN=${same}\n`);
+  const r = run(dir, 'verify');
+  assert.equal(r.json.status, 'pass');
+  assert.deepEqual(r.json.placeholder_keys, {});
+  assert.deepEqual(r.json.unchanged_from_example, { 'packages/api/.env.local': ['QUEUE_TOKEN'] });
+  assert.ok(!r.out.includes(same));
+});
+
+test('a commented-out secret in .env.example never reaches a docstring, scan or checklist output', (t) => {
+  const dir = repo(t);
+  const live = 'sk_' + 'live_51HcommentedOutSecret0123456789';
+  const bare = 'rk_' + 'live_51HbareCommentSecret9876543210';
+  const hex = '9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a';
+  fs.writeFileSync(path.join(dir, 'apps/web/.env.example'), [
+    '# Stripe secret key',
+    `# STRIPE_SECRET_KEY=${live}`,
+    `#   export  "STRIPE_OLD_KEY" = "${live}"`,
+    `# ${bare}`,
+    `# old value ${hex}`,
+    'STRIPE_SECRET_KEY=',
+    '',
+  ].join('\n'));
+  const keys = inv.parseExample(fs.readFileSync(path.join(dir, 'apps/web/.env.example'), 'utf8'));
+  assert.deepEqual(keys, [{ name: 'STRIPE_SECRET_KEY', docstring: 'Stripe secret key' }]);
+  for (const cmd of ['scan', 'checklist']) {
+    const r = run(dir, cmd);
+    assert.equal(r.code, 0);
+    for (const value of [live, bare, hex, 'STRIPE_OLD_KEY']) assert.ok(!r.out.includes(value), `${cmd} printed ${value}`);
+  }
+});
+
+test('docstrings keep ordinary notes, a colon or a URL included', () => {
+  const keys = inv.parseExample('# Required: yes\n# From https://supabase.com/dashboard/project/_/settings/api\nKEY=\n');
+  assert.deepEqual(keys, [{ name: 'KEY', docstring: 'Required: yes From https://supabase.com/dashboard/project/_/settings/api' }]);
+});
+
+test('a relative --catalog path resolves against --root', (t) => {
+  const dir = repo(t);
+  fs.copyFileSync(path.join(__dirname, '../../skills/open-the-shop/references/known-services-catalog.md'), path.join(dir, 'catalog.md'));
+  const r = spawnSync(process.execPath, [SCRIPT, 'checklist', '--root', dir, '--catalog', 'catalog.md'], { encoding: 'utf8', cwd: os.tmpdir() });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(JSON.parse(r.stdout).services_detected.includes('Supabase'));
+});
+
 test('verify passes when every .env.local holds every key with a real value', (t) => {
   const dir = repo(t);
   writeLocals(dir);
@@ -151,6 +289,7 @@ test('verify passes when every .env.local holds every key with a real value', (t
   assert.deepEqual(r.json.missing_files, []);
   assert.deepEqual(r.json.missing_keys_per_file, {});
   assert.deepEqual(r.json.placeholder_keys, {});
+  assert.deepEqual(r.json.unchanged_from_example, {});
 });
 
 test('verify reports missing files, missing or empty keys and placeholders by key name only', (t) => {
@@ -189,4 +328,34 @@ test('an unknown subcommand is a usage error (exit 1)', (t) => {
   const r = run(repo(t), 'dump');
   assert.equal(r.code, 1);
   assert.match(r.err, /usage: env-inventory\.js/);
+});
+
+test('merge-env fills a slot still holding the .env.example value, accepts a provider value equal to the example, and prints key names only', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bts-merge-env-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, '.env.example'), 'QUEUE_TOKEN=copied-example-token-1234\nREDIS_URL=redis://localhost:6379\nAWS_REGION=us-east-1\nAPI_KEY=\n');
+  fs.writeFileSync(path.join(dir, '.env.local'), 'QUEUE_TOKEN=copied-example-token-1234\nAWS_REGION=us-east-1\nAPI_KEY=your_key_here\n');
+  fs.writeFileSync(path.join(dir, 'src.env'), 'QUEUE_TOKEN=provider-queue-token-9876\nREDIS_URL=redis://localhost:6379\nAPI_KEY=example\n');
+  const merge = path.join(__dirname, '../../skills/open-the-shop/scripts/merge-env.js');
+  const r = spawnSync(process.execPath, [merge, '--root', dir, '--example', '.env.example', '--target', '.env.local', '--source', 'src.env'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.written, ['QUEUE_TOKEN', 'REDIS_URL']);
+  assert.deepEqual(out.still_missing, ['API_KEY']);
+  for (const v of ['provider-queue-token-9876', 'copied-example-token-1234', 'redis://localhost:6379', 'us-east-1']) assert.ok(!r.stdout.includes(v));
+  const local = fs.readFileSync(path.join(dir, '.env.local'), 'utf8');
+  assert.match(local, /^QUEUE_TOKEN=provider-queue-token-9876$/m);
+  assert.match(local, /^AWS_REGION=us-east-1$/m);
+});
+
+test('verify on a root with no .env.example fails and says why, never a vacuous pass', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bts-env-empty-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const script = path.join(__dirname, '../../skills/open-the-shop/scripts/env-inventory.js');
+  const r = spawnSync(process.execPath, [script, 'verify', '--root', dir], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.status, 'fail');
+  assert.equal(out.no_env_examples_found, true);
+  assert.deepEqual(out.files_checked, []);
 });

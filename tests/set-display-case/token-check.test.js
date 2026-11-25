@@ -213,3 +213,22 @@ test('a bundle missing a primary file, or a path that does not exist, exits 2 wi
   assert.equal(gone.code, 2);
   assert.equal(gone.json.needs_human.question, "The bundle path provided doesn't exist. Can you confirm the correct path to the Claude Design export?");
 });
+
+test('relative paths resolve against --root, wherever the script runs from', (t) => {
+  const dir = copy(t);
+  const r = spawnSync(process.execPath, [SCRIPT, 'complete', 'globals.css', 'tailwind.config.ts', 'design-system.md', '--root', dir], { encoding: 'utf8', cwd: os.tmpdir() });
+  assert.equal(r.status, 0, r.stderr);
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.gate, 'PASS');
+  assert.equal(json.globals_css_path, path.join(dir, 'globals.css'));
+  const bundle = spawnSync(process.execPath, [SCRIPT, 'bundle', '.', '--root', dir], { encoding: 'utf8', cwd: os.tmpdir() });
+  assert.equal(bundle.status, 0, bundle.stderr);
+  assert.equal(JSON.parse(bundle.stdout).bundle_path, dir);
+});
+
+test('needs_human uses the shared shape: category, question and context only', (t) => {
+  const dir = copy(t);
+  const r = run('bundle', path.join(dir, 'nope'));
+  assert.equal(r.code, 2);
+  assert.deepEqual(Object.keys(r.json.needs_human).sort(), ['category', 'context', 'question']);
+});

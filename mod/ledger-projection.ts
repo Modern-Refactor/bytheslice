@@ -58,6 +58,24 @@ export function roleOf(type: string | undefined): string {
   return canonicalRole(type)
 }
 
+/**
+ * The agent name hooks/kitchen-log.sh gives the /final-quality-check gates script
+ * (`bytheslice:run-gates`, read here as its role). Its rows are a script step: the
+ * kitchen (mcp/kitchen-state.js) draws them on the verify phase, but they are never an
+ * agent, so no live-agent list, rollup or slice signal counts them.
+ */
+export const GATES_SCRIPT_ROLE = 'run-gates'
+
+/** An activity row of a script step, not an agent. */
+export function isScriptStep(row: ActivityRow): boolean {
+  return roleOf(row.agent) === GATES_SCRIPT_ROLE
+}
+
+/** Activity rows of agents only: deduped, script steps dropped. */
+function agentActivity(rows: readonly ActivityRow[]): ActivityRow[] {
+  return dedupeActivity(rows).filter(row => !isScriptStep(row))
+}
+
 /** The gate an agent type is, or null for any other role. */
 export function gateOf(type: string | undefined): PassGate | null {
   const role = roleOf(type)
@@ -136,7 +154,7 @@ export async function readActivity($: EngineInterface): Promise<ActivityRow[]> {
 export function liveAgents(activity: readonly ActivityRow[], now: number): PassLiveAgent[] {
   const started = new Map<string, ActivityRow>()
   const stopped = new Set<string>()
-  for (const row of dedupeActivity(activity)) {
+  for (const row of agentActivity(activity)) {
     if (typeof row.aid !== 'string' || row.aid === '') continue
     if (row.ev === 'SubagentStart' && !started.has(row.aid)) started.set(row.aid, row)
     if (row.ev === 'SubagentStop') stopped.add(row.aid)
@@ -273,7 +291,7 @@ export function rollup(activity: readonly ActivityRow[], slice: string, since?: 
   const totals = (role: string): PassRoleTotals => (agents[role] ??= { count: 0, tok: 0, ms: 0 })
   let tokens = 0
   let ms = 0
-  for (const row of dedupeActivity(activity)) {
+  for (const row of agentActivity(activity)) {
     if (row.slice !== slice) continue
     const role = roleOf(row.agent)
     if (row.ev === 'SubagentStart') {
@@ -393,7 +411,7 @@ function sliceView(
       notes += 1
     }
   }
-  for (const row of dedupeActivity(acts)) {
+  for (const row of agentActivity(acts)) {
     if (row.ev !== 'SubagentStart') continue
     signals.push({ t: row.t, status: phaseOfRole(roleOf(row.agent)) })
     seen(row.t)

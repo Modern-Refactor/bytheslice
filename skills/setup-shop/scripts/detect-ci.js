@@ -38,6 +38,38 @@ function jobsOf(yml) {
 
 const anyJob = (jobs, re) => Object.values(jobs).some((text) => re.test(text));
 
+const LINT_JOB = /\blint\b/i;
+const TYPECHECK_JOB = /typecheck|type-check|\btsc\b/i;
+const TEST_JOB = /\b(test|unit|integration|e2e)/i;
+
+const listDir = (dir) => { try { return fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; } };
+
+// The PR template wherever GitHub reads one, any letter case: pull_request_template.md (or .txt) in .github/,
+// the repo root or docs/, or a PULL_REQUEST_TEMPLATE/ folder holding at least one .md in any of the three.
+function findPrTemplate(root) {
+  for (const base of ['.github', '.', 'docs']) {
+    for (const e of listDir(path.join(root, base))) {
+      if (e.isFile() && /^pull_request_template(\.(md|txt))?$/i.test(e.name)) return path.posix.join(base, e.name).replace(/^\.\//, '');
+    }
+    for (const e of listDir(path.join(root, base))) {
+      if (!e.isDirectory() || !/^pull_request_template$/i.test(e.name)) continue;
+      const md = listDir(path.join(root, base, e.name)).find((f) => f.isFile() && /\.md$/i.test(f.name));
+      if (md) return path.posix.join(base, e.name, md.name).replace(/^\.\//, '');
+    }
+  }
+  return null;
+}
+
+// Every other workflow file, with whether it already runs lint, typecheck or test jobs, so the conductor can ask
+// before adding a second CI file next to one that covers the same gates.
+function otherWorkflows(root, ciName) {
+  const dir = path.join(root, '.github', 'workflows');
+  return listDir(dir).filter((e) => e.isFile() && /\.ya?ml$/i.test(e.name) && e.name !== ciName).map((e) => e.name).sort().map((name) => {
+    const jobs = jobsOf(read(path.join(dir, name)) ?? '');
+    return { file: `.github/workflows/${name}`, has_lint_job: anyJob(jobs, LINT_JOB), has_typecheck_job: anyJob(jobs, TYPECHECK_JOB), has_test_job: anyJob(jobs, TEST_JOB) };
+  });
+}
+
 function walkEnvExamples(dir, out, depth = 0) {
   if (depth > 5) return;
   let entries;
@@ -109,15 +141,18 @@ function detect(root) {
   const summary = [];
 
   // 1. ci.yml with typecheck, lint and a test-style job; lean also needs build and the smoke job.
-  const ciText = read(path.join(root, '.github', 'workflows', 'ci.yml'));
+  // ci.yml, or ci.yaml (GitHub reads both).
+  const ciName = ['ci.yml', 'ci.yaml'].find((f) => fs.existsSync(path.join(root, '.github', 'workflows', f))) ?? null;
+  const ciText = ciName ? read(path.join(root, '.github', 'workflows', ciName)) : null;
   const jobs = ciText ? jobsOf(ciText) : {};
   const pkg = (() => { try { return JSON.parse(read(path.join(root, 'package.json')) ?? '{}'); } catch { return {}; } })();
   const hasSmokeScript = Boolean(pkg.scripts && pkg.scripts['test:e2e:smoke']);
   const ci = {
     exists: ciText !== null,
-    has_typecheck_job: anyJob(jobs, /typecheck|type-check|\btsc\b/i),
-    has_lint_job: anyJob(jobs, /\blint\b/i),
-    has_test_job: anyJob(jobs, /\b(test|unit|integration|e2e)/i),
+    file: ciName ? `.github/workflows/${ciName}` : null,
+    has_typecheck_job: anyJob(jobs, TYPECHECK_JOB),
+    has_lint_job: anyJob(jobs, LINT_JOB),
+    has_test_job: anyJob(jobs, TEST_JOB),
     has_build_job: anyJob(jobs, /\bbuild\b/i),
     has_smoke_job: Object.keys(jobs).includes('e2e-smoke') || anyJob(jobs, /test:e2e:smoke/),
   };
@@ -140,8 +175,18 @@ function detect(root) {
   const sliceTier = /\blint\b/.test(hook) && /\btypecheck\b|type-check/.test(hook) && /\btest\b/.test(hook) && /\bbuild\b/.test(hook);
   const husky = { exists: hookRaw !== null, looks_canonical: hookRaw !== null && (sliceTier || legacy), legacy_full_chain: hookRaw !== null && legacy };
 
-  // 4. The PR template: existence only.
-  const prt = { exists: fs.existsSync(path.join(root, '.github', 'pull_request_template.md')) };
+  // 4. The PR template: existence only, in any location and letter case GitHub accepts.
+  const prtPath = findPrTemplate(root);
+  const prt = { exists: prtPath !== null, path: prtPath };
+
+  // No ci.yml but other workflows: list them so the conductor asks before adding a second CI file.
+  ci.other_workflows = ciText === null ? otherWorkflows(root, ciName) : [];
+  if (ciText === null && ci.other_workflows.length) {
+    const gatesOf = (w) => ['lint', 'typecheck', 'test'].filter((g) => w[`has_${g}_job`]);
+    const list = ci.other_workflows.map((w) => `${w.file} (${gatesOf(w).length ? `${gatesOf(w).join(', ')} jobs` : 'no lint, typecheck or test job'})`).join(', ');
+    const covering = ci.other_workflows.some((w) => gatesOf(w).length);
+    notes.push(`no ci.yml, but other workflows exist: ${list}${covering ? '; ask the operator before adding ci.yml beside a workflow that already runs these gates' : ''}`);
+  }
 
   const missing = [];
   if (!ci.exists) missing.push('ci.yml');
@@ -180,7 +225,7 @@ function main() {
   const argv = process.argv.slice(2);
   let root = process.cwd();
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--root') root = path.resolve(argv[++i] ?? '');
+    if (argv[i] === '--root' || argv[i] === '--cwd') root = path.resolve(argv[++i] ?? '');
     else {
       process.stderr.write(`detect-ci: unknown argument ${argv[i]}\nusage: detect-ci.js [--root <project-root>]\n`);
       process.exit(1);
@@ -193,6 +238,6 @@ function main() {
   process.stdout.write(`${JSON.stringify(detect(root))}\n`);
 }
 
-module.exports = { jobsOf, resolveTier, designSystemPresent, detect };
+module.exports = { jobsOf, resolveTier, designSystemPresent, findPrTemplate, otherWorkflows, detect };
 
 if (require.main === module) main();

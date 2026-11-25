@@ -702,6 +702,7 @@ function parseArgs(argv) {
     if (a === '--sidebar' || a === '--has-sidebar') opts.hasSidebar = true;
     else if (a === '--no-sidebar') opts.hasSidebar = false;
     else if (['--css', '--tailwind', '--doc', '--draft', '--checklist'].includes(a)) opts[a.slice(2)] = rest[++i];
+    else if (a === '--root' || a === '--cwd') opts.root = rest[++i];
     else if (a.startsWith('--')) throw new UsageError(`unknown argument ${a}`);
     else opts.positional.push(a);
   }
@@ -716,6 +717,9 @@ function parseArgs(argv) {
     else throw new UsageError(`cannot tell what ${p} is; pass it with --css, --tailwind, --doc or --draft`);
   }
   if (command === 'bundle' && !opts.bundle) throw new UsageError('bundle needs the bundle folder');
+  // Relative paths are project-relative: resolved against --root (default: the working directory).
+  const root = path.resolve(opts.root ?? process.cwd());
+  for (const k of ['bundle', 'css', 'tailwind', 'doc', 'draft', 'checklist']) if (typeof opts[k] === 'string') opts[k] = path.resolve(root, opts[k]);
   return opts;
 }
 
@@ -735,7 +739,7 @@ function main() {
     }
     process.stderr.write(`token-check: ${err.message}\n`);
     if (err instanceof UsageError) {
-      process.stderr.write('usage: token-check.js bundle <dir> [--sidebar|--no-sidebar]\n       token-check.js complete <css> [tailwind.config.ts] <design-system.md> [--sidebar|--no-sidebar]\n       token-check.js complete --draft docs/design-system-draft.md [--sidebar|--no-sidebar]\n');
+      process.stderr.write('usage: token-check.js bundle <dir> [--root <project root>] [--sidebar|--no-sidebar]\n       token-check.js complete <css> [tailwind.config.ts] <design-system.md> [--sidebar|--no-sidebar]\n       token-check.js complete --draft docs/design-system-draft.md [--sidebar|--no-sidebar]\n');
     }
     process.exit(1);
   }

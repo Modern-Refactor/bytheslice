@@ -101,6 +101,7 @@ e2e_plan:
   target_apps_for_e2e:
     - path: <workspace-relative>
       visual_enabled: true | false
+      visual_baselines_dir: <workspace-relative or null>  # per-app only: where this app's Playwright config keeps its baselines (default <path>/tests/visual/baselines); null under root-only
   viewports: [375, 768, 1280, 1920]
   reuse_existing_e2e_install: true | false  # true if a framework is already installed
   notes:
