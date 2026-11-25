@@ -123,8 +123,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Regex sweep on changed files
         run: bash scripts/check-design-system-tokens.sh
-      - name: ESLint token-aware check
-        run: pnpm exec eslint --config .eslintrc.design-system.json --ext .ts,.tsx $(git diff --name-only origin/main...HEAD | grep -E '\.(ts|tsx)$' | tr '\n' ' ') || true
+      - name: ESLint token-aware check (the project's own lint script, which carries the merged design-system rules)
+        run: pnpm lint
       - name: Stylelint CSS check
         run: pnpm exec stylelint "**/*.css" --config .stylelintrc.json
 
@@ -213,14 +213,8 @@ jobs:
       - name: Regex sweep: token violations in changed files
         run: bash scripts/check-design-system-tokens.sh
 
-      - name: ESLint: token-aware Tailwind check
-        run: |
-          CHANGED=$(git diff --name-only origin/main...HEAD | grep -E '\.(ts|tsx)$' | tr '\n' ' ')
-          if [ -n "$CHANGED" ]; then
-            pnpm exec eslint --config .eslintrc.design-system.json --ext .ts,.tsx $CHANGED
-          else
-            echo "No TS/TSX files changed: skipping ESLint step."
-          fi
+      - name: ESLint: token-aware Tailwind check (the project's own lint script, which carries the merged design-system rules)
+        run: pnpm lint
 
       - name: Stylelint: CSS file checks
         run: pnpm exec stylelint "**/*.css" --config .stylelintrc.json
@@ -307,13 +301,12 @@ Make executable: `chmod +x scripts/check-design-system-tokens.sh`.
 
 ---
 
-## `.eslintrc.design-system.json`
+## ESLint design-system rules
 
-ESLint config additions for token-aware linting. Add `eslint-plugin-tailwindcss` to devDependencies first.
+The rules below are **merged into the project's existing ESLint config** (never written as a separate config file, and never extending one the project does not have), so the project's normal `lint` script, which `ci.yml` and `design-system-compliance.yml` both run, enforces them. Add `eslint-plugin-tailwindcss` to devDependencies first. Translate the block to the format the existing config uses (legacy `.eslintrc.*` keys as below; flat config as an extra entry in the exported array with `plugins: { tailwindcss }`, `rules` and `settings`), and keep every rule and override already there.
 
 ```json
 {
-  "extends": ["./.eslintrc.json"],
   "plugins": ["tailwindcss"],
   "rules": {
     "tailwindcss/no-custom-classname": "error",

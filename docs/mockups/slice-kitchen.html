@@ -1088,7 +1088,6 @@ function makeChar(o) {
 // ---------- the roster: every agent has a character ----------
 const UNI = { opus: { top: 0x3a3532, buttons: true }, sonnet: { top: 0xf3ead6, buttons: true }, haiku: { top: 0x9fae8c, apron: 0xd8a23c } };
 const CREWS = [
-  ['setup', 'Opening crew', 'Gets a new shop open: foundation, wiring, permits and keys.'],
   ['menu', 'Test kitchen', 'Develops the recipes: turns a brief into a menu of pies and slices.'],
   ['case', 'Display case', 'Design system, components and the library.'],
   ['line', 'The line', 'Splits the ticket and cooks each slice at its station.'],
@@ -1098,13 +1097,13 @@ const CREWS = [
 ];
 const R = (id, name, crew, tier, role) => ({ id, name, crew, tier, role });
 const ROSTER = [
-  R('config-generator', 'Cora', 'setup', 'haiku', 'Writes the shop config.'), R('ci-cd-detector', 'Dot', 'setup', 'haiku', 'Checks the wiring.'),
-  R('env-scanner', 'Enzo', 'setup', 'haiku', 'Permit clerk. Lists every key.'), R('env-verifier', 'Vera', 'setup', 'haiku', 'Safety inspector for keys.'), R('github-secrets-scanner', 'Gus', 'setup', 'haiku', 'Checks the safe.'),
-  R('checklist-generator', 'Chet', 'setup', 'haiku', 'Prints the opening checklist.'), R('retrospective-reviewer', 'Rhea', 'board', 'opus', 'Reviews the day after close and spots the patterns.'), R('review-scribe', 'Paz', 'board', 'sonnet', 'Scribe (scene role, not a registered agent). Writes up what the review board proposes.'),
+  
+  
+  R('retrospective-reviewer', 'Rhea', 'board', 'opus', 'Reviews the day after close and spots the patterns.'), R('review-scribe', 'Paz', 'board', 'sonnet', 'Scribe (scene role, not a registered agent). Writes up what the review board proposes.'),
   R('brief-analyzer', 'Bree', 'menu', 'sonnet', 'Reads the brief, asks the right questions.'), R('prd-reviewer', 'Prue', 'menu', 'sonnet', 'Food critic for the menu.'), 
   R('stage-planner', 'Stan', 'menu', 'opus', 'The pie cutter. Cuts the pies, extends the menu and weighs the design options.'), R('phased-plan-writer', 'Phil', 'menu', 'opus', 'Writes each recipe card.'), 
   R('rules-assembler', 'Russ', 'menu', 'sonnet', 'Binds the house rules.'), R('master-checklist-synthesizer', 'Max', 'menu', 'opus', 'Ticket printer.'), 
-  R('token-expander', 'Tia', 'case', 'opus', 'Mixes the brand colors.'), R('bundle-validator', 'Val', 'case', 'sonnet', 'Checks the design delivery.'), R('compliance-pre-check', 'Coco', 'case', 'sonnet', 'Checks every token is stocked.'),
+  R('token-expander', 'Tia', 'case', 'opus', 'Mixes the brand colors.'), 
   R('library-route-scaffolder', 'Lars', 'case', 'sonnet', 'Builds the display case.'), R('ui-builder', 'Kit', 'case', 'sonnet', 'Pastry artist. Stocks blocks first, crafts what stock cannot.'),
   R('ux-layout-designer', 'Lyle', 'case', 'sonnet', 'Floor planner and trend scout. Picks the pattern, then lays out the shell.'), R('state-illustrator', 'Lu', 'case', 'sonnet', 'Paints the empty, loading and error states.'),
   R('library-entry-writer', 'Libby', 'case', 'sonnet', 'Window dresser.'),
@@ -1113,9 +1112,9 @@ const ROSTER = [
   R('fix-attempter', 'Fitz', 'line', 'sonnet', 'Fixes what comes back.'), R('debug-instrumenter', 'Dee', 'line', 'sonnet', 'Brings the thermometer probes.'),
   R('slice-tester', 'Tay', 'pass', 'sonnet', 'Taster. Tries every affordance.'), R('slice-verifier', 'Inez', 'pass', 'sonnet', 'Health inspector. Lint, types, build, tests.'), 
   R('code-reviewer', 'Quinn', 'pass', 'opus', 'One-pass reviewer. Checks the plate matches the recipe and the craft holds.'),
-  R('local-gates-runner', 'Ollie', 'door', 'sonnet', 'Runs the oven: the full local gate.'), R('scaffold-discovery', 'Sky', 'door', 'opus', 'Surveys the building.'), R('framework-detector', 'Fred', 'door', 'haiku', 'Identifies the kitchen equipment.'),
-  R('e2e-installer', 'Ed', 'door', 'sonnet', 'Installs the tasting robots.'), R('husky-installer', 'Hux', 'door', 'haiku', 'Fits the door alarm.'), R('lint-config-writer', 'Linda', 'door', 'haiku', 'Posts the hygiene rules.'),
-  R('workflow-writer', 'Wren', 'door', 'sonnet', 'Writes the CI routines.'), R('branch-protection-writer', 'Locke', 'door', 'haiku', 'Locksmith for main.'), R('a11y-discovery-runner', 'Ally', 'door', 'sonnet', 'Checks the ramp and the menus.'),
+  R('oven-tender', 'Ollie', 'door', 'sonnet', 'Oven tender (scene role, not a registered agent). Runs the full local gate; the gates themselves are a script now.'), R('scaffold-discovery', 'Sky', 'door', 'opus', 'Surveys the building and picks the E2E setup.'), R('scaffold-writer', 'Wren', 'door', 'sonnet', 'Fits out the back door one block at a time: tasting robots, CI routines, door alarm, hygiene rules, the lock on main.'), 
+  
+  R('a11y-discovery-runner', 'Ally', 'door', 'sonnet', 'Checks the ramp and the menus.'),
   R('platform-walker', 'Wally', 'door', 'sonnet', 'Secret shopper.'), R('ci-fix-attempter', 'Dex', 'door', 'sonnet', 'Delivery driver. Fixes flats on the way.'),
 ];
 const byId = Object.fromEntries(ROSTER.map(r => [r.id, r]));
@@ -1245,7 +1244,7 @@ const A = {
   kit: new Actor('ui-builder', { skin: skins[5], hair: 'quiff', hairC: 0xd8a23c }, -.25, -3.55, F.S),
   lu: new Actor('state-illustrator', { skin: skins[2], hair: 'bun', hairC: 0x4a2c20 }, -.25, -3.55, F.S),
   pia: new Actor('plater', { skin: skins[0], hair: 'afro', hairC: 0x6c4430 }, -1.9, -.62, F.S),
-  ollie: new Actor('local-gates-runner', { skin: skins[1], hair: 'beard', hairC: 0x8a5a3a, prop: 'probe' }, 4.55, -1.55, -2.3),
+  ollie: new Actor('oven-tender', { skin: skins[1], hair: 'beard', hairC: 0x8a5a3a, prop: 'probe' }, 4.55, -1.55, -2.3),
   tay: new Actor('slice-tester', { skin: skins[3], hair: 'bun', hairC: 0x1f1813, prop: 'spoon' }, 2.2, -.75, F.W),
   inez: new Actor('slice-verifier', { skin: skins[5], hair: 'greybun', hairC: 0xdcd2c3, prop: 'clip' }, 2.2, .95, F.W),
 };

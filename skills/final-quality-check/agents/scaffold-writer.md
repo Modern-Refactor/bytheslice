@@ -193,7 +193,7 @@ Extra input: the detected ESLint config file path(s) from the profile's `eslint_
 
 1. Detect the project's ESLint config file. If multiple exist, prefer the flat config (`eslint.config.{js,cjs,mjs,ts}`) over the legacy form.
 2. Install required dev dependencies: `<pm> add -D eslint-plugin-tailwindcss stylelint stylelint-config-standard`.
-3. Add the eslint-plugin-tailwindcss config block (the rules in the templates file's "`.eslintrc.design-system.json`" section) to the existing ESLint config, in that config's own format:
+3. Add the eslint-plugin-tailwindcss config block (the rules in the templates file's "ESLint design-system rules" section; they are merged into the existing config and are never a separate `.eslintrc.design-system.json`, so the project's normal `lint` script, which both CI workflows run, enforces them) to the existing ESLint config, in that config's own format:
    - Legacy `.eslintrc.json` / `.eslintrc.cjs`: add `"tailwindcss"` to `plugins` and the recommended rules block.
    - Flat `eslint.config.js` / `.cjs` / `.mjs` / `.ts`: append the plugin's config to the exported array, keeping the module syntax the file already uses (`require` in `.cjs`, `import` in `.mjs` / `.ts`).
    - **Preserve every existing rule and override**, in every format: never reorder, drop, or loosen an entry already there. When the existing config already sets one of the plugin's rules, keep the existing setting.

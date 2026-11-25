@@ -19,6 +19,8 @@ const LEGACY_ROLES = Object.freeze({
   'db-schema-stage-writer': 'phased-plan-writer',
   'modern-ux-expert': 'ux-layout-designer', 'layout-architect': 'ux-layout-designer',
   'block-composer': 'ui-builder', 'component-crafter': 'ui-builder',
+  'e2e-installer': 'scaffold-writer', 'workflow-writer': 'scaffold-writer', 'husky-installer': 'scaffold-writer',
+  'lint-config-writer': 'scaffold-writer', 'branch-protection-writer': 'scaffold-writer', 'framework-detector': 'scaffold-discovery',
 });
 // An agent type without its plugin prefix (`bytheslice:discovery` reads `discovery`).
 const bareType = type => { const name = String(type || ''); return name.slice(name.lastIndexOf(':') + 1); };
@@ -360,7 +362,10 @@ function foldActivity(inputRows, now = Date.now(), { mergedPie = null, activePie
 }
 
 // The step an agent is on, from the dispatch label convention (`P5 S5.2 build: ...`) or, without one, from its role.
-// Retired names keep their own entry, so an old activity log reads as it did.
+// Retired names keep their own entry, so an old activity log reads as it did. Known gap (7.1.0): /final-quality-check
+// Phase 4 now runs scripts/run-gates.js as a Bash command, not an agent, and the activity log records agent rows only,
+// so that phase no longer shows as verifying; the 'local-gates-runner' entry below serves old logs. The per-slice
+// verify step is unaffected (slice-verifier still runs the slice's gates).
 const STEPS = ['build', 'test', 'verify', 'fix', 'commit', 'review', 'plan'];
 const STEP_OF_TYPE = { implementer: 'build', 'block-composer': 'build', 'component-crafter': 'build', 'layout-architect': 'build',
   'ui-builder': 'build', 'ux-layout-designer': 'build',

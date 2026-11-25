@@ -74,10 +74,10 @@ Old agent names met in a stage file, checklist or earlier chat message (for exam
 | 0 | [agents/scaffold-discovery.md](agents/scaffold-discovery.md) | opus | medium | readonly (stack profile + E2E plan) |
 | 3A | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: e2e` | sonnet | medium | write |
 | 3B | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: workflows` | sonnet | medium | write |
-| 3C | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: husky` | sonnet | low (see below) | write |
-| 3E | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: lint` | sonnet | low (see below) | write |
+| 3C | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: husky` | sonnet | medium | write (dispatch at low effort where the host allows, see below) |
+| 3E | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: lint` | sonnet | medium | write (dispatch at low effort where the host allows, see below) |
 | 3F | [agents/a11y-discovery-runner.md](agents/a11y-discovery-runner.md) | sonnet | medium | readonly |
-| 3G | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: branch-protection` | sonnet | low (see below) | write |
+| 3G | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: branch-protection` | sonnet | medium | write (dispatch at low effort where the host allows, see below) |
 | 4 | [scripts/run-gates.js](scripts/run-gates.js) (script, no agent) | none | none | runs commands, writes logs |
 
 `scaffold-writer` is one agent dispatched **once per sub-block**, never once for all of them, so each sub-block keeps its own review pass and its own commit. Its frontmatter effort is `medium`; dispatch blocks C, E and G with `effort: low` where the host takes a per-dispatch effort (the Agent tool's `effort` input), and leave the default where it does not. `scaffold-writer` makes no git writes: it returns `files_changed`, and the orchestrator stages exactly those paths (`git add -- <paths>`, never `git add -A`) and commits.
@@ -297,7 +297,7 @@ Sections 1 to 6 below describe the **standard tier** with the default PR deliver
 - [ ] `.husky/pre-push` exists, is executable, and runs the lean set from the lean template (lint, typecheck, test, build, `test:e2e:smoke`, DB tests only when the schema or migrations change).
 - [ ] `.github/pull_request_template.md` exists with the lean checklist.
 - [ ] `.github/workflows/ci.yml` exists from the lean template (lint, typecheck, unit-tests, build, e2e-smoke).
-- [ ] `.github/workflows/design-system-compliance.yml`, `.eslintrc.json` tailwindcss additions and `.stylelintrc.json` exist IF a design system exists, and are absent otherwise.
+- [ ] `.github/workflows/design-system-compliance.yml`, the project ESLint config's tailwindcss additions and `.stylelintrc.json` exist IF a design system exists, and are absent otherwise.
 - [ ] No `e2e.yml`, `e2e-coverage.yml`, `db-schema-drift.yml`, `@regression-core` spec, `@visual` spec or `tests/visual/baselines/` was written.
 - [ ] `package.json` has `test:e2e` and `test:e2e:smoke` (plus `check:design-system` when a design system exists).
 - [ ] Exactly one `@smoke` spec exists and walks the app's main flow (skip when `scaffold-discovery`'s `e2e_plan` is skip-E2E, and say so).

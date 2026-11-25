@@ -21,29 +21,15 @@ export const PROMPT_MAX = 20000
  */
 export const DEFAULT_ROLES: Readonly<Record<string, readonly string[]>> = {
   'a11y-discovery-runner': ['sonnet'],
-  'branch-protection-writer': ['haiku'],
   'brief-analyzer': ['sonnet'],
-  'bundle-validator': ['sonnet'],
-  'checklist-generator': ['haiku'],
-  'ci-cd-detector': ['haiku'],
   'ci-fix-attempter': ['sonnet'],
   'code-explorer': ['opus'],
   'code-reviewer': ['opus'],
-  'compliance-pre-check': ['sonnet'],
-  'config-generator': ['haiku'],
   'debug-instrumenter': ['sonnet'],
-  'e2e-installer': ['sonnet'],
-  'env-scanner': ['haiku'],
-  'env-verifier': ['haiku'],
   'fix-attempter': ['sonnet'],
-  'framework-detector': ['haiku'],
-  'github-secrets-scanner': ['haiku'],
-  'husky-installer': ['haiku'],
   implementer: ['opus'],
   'library-entry-writer': ['sonnet'],
   'library-route-scaffolder': ['sonnet'],
-  'lint-config-writer': ['haiku'],
-  'local-gates-runner': ['sonnet'],
   'master-checklist-synthesizer': ['opus'],
   'phased-plan-writer': ['opus'],
   'platform-walker': ['sonnet'],
@@ -52,6 +38,7 @@ export const DEFAULT_ROLES: Readonly<Record<string, readonly string[]>> = {
   'rules-assembler': ['sonnet'],
   'rules-loader': ['haiku'],
   'scaffold-discovery': ['opus'],
+  'scaffold-writer': ['sonnet'],
   'slice-tester': ['sonnet'],
   'slice-verifier': ['sonnet'],
   'stage-planner': ['opus'],
@@ -61,7 +48,6 @@ export const DEFAULT_ROLES: Readonly<Record<string, readonly string[]>> = {
   'ui-fix-attempter': ['opus'],
   'ui-reviewer': ['sonnet'],
   'ux-layout-designer': ['sonnet'],
-  'workflow-writer': ['sonnet'],
 }
 
 /**
@@ -75,8 +61,7 @@ export type LegacyAgentAlias = { agent: string | null; mode?: string; script?: s
  * Every retired agent name, old name first. Ledger rows, activity rows,
  * spawns and config keys written before a rename keep working because every
  * name lookup goes through canonicalRole. A name still in DEFAULT_ROLES is
- * still registered and resolves to itself (the PR 2 entries below wait for
- * their agents to leave the roster), and an entry with `agent: null` has no
+ * still registered and resolves to itself, and an entry with `agent: null` has no
  * role to resolve to, so its old name is kept as it was written.
  */
 export const LEGACY_AGENT_ALIASES: Readonly<Record<string, LegacyAgentAlias>> = {
@@ -97,16 +82,16 @@ export const LEGACY_AGENT_ALIASES: Readonly<Record<string, LegacyAgentAlias>> = 
   'bootstrap-runner': { agent: null },
   'proposal-drafter': { agent: null },
   'consistency-checker': { agent: null },
-  // The scripts and scaffold merges that follow (still registered until then).
-  'env-scanner': { agent: null, script: 'scripts/env-inventory.js' },
-  'github-secrets-scanner': { agent: null, script: 'scripts/env-inventory.js' },
-  'checklist-generator': { agent: null, script: 'scripts/env-inventory.js' },
-  'env-verifier': { agent: null, script: 'scripts/env-inventory.js' },
-  'bundle-validator': { agent: null, script: 'scripts/token-check.js' },
-  'compliance-pre-check': { agent: null, script: 'scripts/token-check.js' },
-  'config-generator': { agent: null, script: 'scripts/write-config.js' },
-  'local-gates-runner': { agent: null, script: 'scripts/run-gates.js' },
-  'ci-cd-detector': { agent: null, script: 'scripts/detect-ci.js' },
+  // 7.1 scripts and the scaffold merges.
+  'env-scanner': { agent: null, script: 'skills/open-the-shop/scripts/env-inventory.js' },
+  'github-secrets-scanner': { agent: null, script: 'skills/open-the-shop/scripts/env-inventory.js' },
+  'checklist-generator': { agent: null, script: 'skills/open-the-shop/scripts/env-inventory.js' },
+  'env-verifier': { agent: null, script: 'skills/open-the-shop/scripts/env-inventory.js' },
+  'bundle-validator': { agent: null, script: 'skills/set-display-case/scripts/token-check.js' },
+  'compliance-pre-check': { agent: null, script: 'skills/set-display-case/scripts/token-check.js' },
+  'config-generator': { agent: null, script: 'skills/setup-shop/scripts/write-config.js' },
+  'local-gates-runner': { agent: null, script: 'skills/final-quality-check/scripts/run-gates.js' },
+  'ci-cd-detector': { agent: null, script: 'skills/setup-shop/scripts/detect-ci.js' },
   'e2e-installer': { agent: 'scaffold-writer', mode: 'e2e' },
   'workflow-writer': { agent: 'scaffold-writer', mode: 'workflows' },
   'husky-installer': { agent: 'scaffold-writer', mode: 'husky' },

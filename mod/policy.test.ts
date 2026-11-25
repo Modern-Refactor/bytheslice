@@ -35,7 +35,7 @@ const PROJECT = `{
 }`
 
 test('the defaults cover every role with one tier each and the four context markers', () => {
-  expect(Object.keys(DEFAULT_ROLES)).toHaveLength(42)
+  expect(Object.keys(DEFAULT_ROLES)).toHaveLength(28)
   expect(Object.values(DEFAULT_ROLES).every(tiers => tiers.length === 1)).toBe(true)
   expect(DEFAULT_ROLES.implementer).toEqual(['opus'])
   expect(DEFAULT_ROLES['code-reviewer']).toEqual(['opus'])
@@ -111,10 +111,14 @@ test('every retired name resolves to a registered agent, a script or nothing; ca
   expect(canonicalRole('scaffold-discovery')).toBe('scaffold-discovery')
   expect(canonicalRole('Explore')).toBe('Explore')
   expect(canonicalRole(undefined)).toBe('')
-  // A name the scripts change retires next is still registered, so it is still its own role until then.
+  // The 7.1 merges resolve to scaffold-writer or scaffold-discovery; a script-replaced agent keeps the name it was written under.
   expect(LEGACY_AGENT_ALIASES['e2e-installer']).toEqual({ agent: 'scaffold-writer', mode: 'e2e' })
-  expect(canonicalRole('e2e-installer')).toBe('e2e-installer')
+  expect(canonicalRole('e2e-installer')).toBe('scaffold-writer')
+  expect(canonicalRole('bytheslice:branch-protection-writer')).toBe('scaffold-writer')
+  expect(canonicalRole('framework-detector')).toBe('scaffold-discovery')
   expect(canonicalRole('env-scanner')).toBe('env-scanner')
+  expect(LEGACY_AGENT_ALIASES['local-gates-runner']).toEqual({ agent: null, script: 'skills/final-quality-check/scripts/run-gates.js' })
+  expect(LEGACY_AGENT_ALIASES['ci-cd-detector']?.script).toBe('skills/setup-shop/scripts/detect-ci.js')
   expect(LEGACY_AGENT_ALIASES.discovery).toEqual({ agent: 'code-explorer', mode: 'stage-recon' })
   expect(LEGACY_AGENT_ALIASES['design-critic']).toEqual({ agent: 'ui-reviewer', mode: 'critique' })
   expect(legacyNamesOf('code-reviewer')).toEqual(['spec-reviewer', 'quality-reviewer'])
@@ -179,8 +183,10 @@ test('modelTiers under retired names set the new role: the higher tier wins, one
     ['roles.ui-reviewer', true],
   ])
   for (const old of ['discovery', 'checklist-curator', 'stage-decomposer', 'db-schema-stage-writer']) expect(all.policy.roles[old]).toBeUndefined()
-  // A still-registered agent the scripts change retires next keeps its own key.
-  expect(policyFrom({ modelTiers: { envScanner: 'sonnet' } }).policy.roles['env-scanner']).toEqual(['sonnet'])
+  // A key for an agent a script replaced names no role and is ignored.
+  expect(policyFrom({ modelTiers: { envScanner: 'sonnet' } }).overrides).toEqual([])
+  // A key for an agent merged into scaffold-writer sets that role.
+  expect(policyFrom({ modelTiers: { e2eInstaller: 'opus' } }).policy.roles['scaffold-writer']).toEqual(['opus'])
   // A deleted agent's key names no role and is ignored.
   expect(policyFrom({ modelTiers: { bootstrapRunner: 'opus' } }).overrides).toEqual([])
 })

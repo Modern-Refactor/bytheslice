@@ -95,7 +95,7 @@ The contract is:
 3. Walk the "Where each skill branches on stack" table in `framework-detect.md` and confirm the per-skill HITL or templated behavior. At minimum the HITL fallback path must work — silent miss is the failure mode to avoid.
 4. (Optional, Tier L) Write per-framework Phase 4.5 library-preview templates so the stack graduates from "⚠️ HITL" to "✅".
 
-Adding a non-listed stack without doing step 1 will cause `framework-detector` to return `unknown` and bubble HITL — that's the safe default.
+Adding a non-listed stack without doing step 1 will cause `scaffold-discovery` to return `unknown` and bubble HITL, which is the safe default.
 
 ## Out of scope
 

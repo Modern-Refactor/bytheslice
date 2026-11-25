@@ -54,8 +54,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Regex sweep on changed files
         run: bash scripts/check-design-system-tokens.sh
-      - name: ESLint token-aware check
-        run: pnpm exec eslint --config .eslintrc.design-system.json --ext .ts,.tsx $(git diff --name-only origin/main...HEAD | grep -E '\.(ts|tsx)$' | tr '\n' ' ') || true
+      - name: ESLint token-aware check (the project's own lint script, which carries the merged design-system rules)
+        run: pnpm lint
       - name: Stylelint CSS check
         run: pnpm exec stylelint "**/*.css" --config .stylelintrc.json
 

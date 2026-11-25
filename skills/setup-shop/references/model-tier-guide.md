@@ -9,13 +9,13 @@ The ByTheSlice plugin uses three model tiers across all sub-agents. Each tier ma
 
 | Tier | Alias | Use cases | Effort default |
 |---|---|---|---|
-| **Fast** | `haiku` | Mechanical checks, file scans, template writes | low |
+| **Fast** | `haiku` | Reading and resolving config, small lookups | low |
 | **Balanced** | `sonnet` | Implementation review, judgment calls, vision tasks | medium |
 | **Deep** | `opus` | Primary implementation, codebase discovery, plan writing, creative expansion, retrospective | medium |
 
 ## Why these tiers
 
-- Mechanical work (scans, file checks, template writes) is best served by the fastest model: it saves tokens, completes in seconds, accuracy is parity for these tasks
+- Mechanical work (scans, file checks, deterministic checks) runs as scripts; what is left for the fastest model is reading and resolving config, where accuracy is at parity and it saves tokens
 - Discovery and plan writing get Opus: every later agent builds on the map and the plan, so a gap there costs far more rework than the tokens saved
 - Most reviewers + vision sit in the middle; Sonnet handles them well at lower cost
 - The actual writing of new code (the implementer) gets Opus; this is where dollars are best spent
@@ -27,31 +27,17 @@ The table below lists every registered agent with the **actual current values** 
 
 | Skill | Agent | Model | Effort | Readonly |
 |---|---|---|---|---|
-| **setup-shop** | ci-cd-detector | `haiku` | low | yes |
-| **setup-shop** | config-generator | `haiku` | low | no |
 | **create-menu** | brief-analyzer | `sonnet` | medium | yes |
 | **create-menu** | prd-reviewer | `sonnet` | medium | yes |
 | **cook-pizzas** | master-checklist-synthesizer | `opus` | medium | no |
 | **cook-pizzas** | phased-plan-writer | `opus` | medium | no |
 | **cook-pizzas** | rules-assembler | `sonnet` | medium | no |
 | **cook-pizzas** | stage-planner | `opus` | medium | yes |
-| **set-display-case** | bundle-validator | `sonnet` | medium | yes |
-| **set-display-case** | compliance-pre-check | `sonnet` | medium | yes |
 | **set-display-case** | library-route-scaffolder | `sonnet` | medium | no |
 | **set-display-case** | token-expander | `opus` | medium | no |
-| **open-the-shop** | checklist-generator | `haiku` | low | yes |
-| **open-the-shop** | env-scanner | `haiku` | low | yes |
-| **open-the-shop** | env-verifier | `haiku` | low | yes |
-| **open-the-shop** | github-secrets-scanner | `haiku` | low | yes |
 | **final-quality-check** | a11y-discovery-runner | `sonnet` | medium | yes |
-| **final-quality-check** | branch-protection-writer | `haiku` | low | no |
-| **final-quality-check** | e2e-installer | `sonnet` | medium | no |
-| **final-quality-check** | framework-detector | `haiku` | low | yes |
-| **final-quality-check** | husky-installer | `haiku` | low | no |
-| **final-quality-check** | lint-config-writer | `haiku` | low | no |
-| **final-quality-check** | local-gates-runner | `sonnet` | medium | no |
 | **final-quality-check** | scaffold-discovery | `opus` | medium | yes |
-| **final-quality-check** | workflow-writer | `sonnet` | medium | no |
+| **final-quality-check** | scaffold-writer | `sonnet` | medium | no |
 | **sell-slice** | debug-instrumenter | `sonnet` | high | no |
 | **sell-slice** | fix-attempter | `sonnet` | high | no |
 | **sell-slice** | code-explorer | `opus` | medium | yes |
@@ -124,6 +110,7 @@ The plugin intentionally invests heavier compute on agents that PRODUCE or VERIF
 - The `code-reviewer` (the one-pass gate for spec and quality, which catches what the implementer missed) runs at deep tier (`opus/medium`). This is a user override from the spec default of `sonnet/medium`: the reasoning is that a Sonnet reviewer applied to Opus output would miss subtle issues that only a model of equal depth can catch.
 - The `slice-verifier` runs at balanced tier with high effort (`sonnet/high`). It is the single gate that runs every static check once, so it must reason about precedence and environment interaction (subtle CI-config or design-system violations missed here are expensive to debug downstream) without burning Opus budget on otherwise deterministic checks. This inherits the rationale that kept the v4 CI-integrity gate on `sonnet` (NOT `haiku/low` as the original spec assigned).
 - The `slice-tester` runs at balanced tier with high effort (`sonnet/high`). It writes and reasons over a bespoke behavioral plan, drives a browser, and (for data-flow slices) authors seed/cleanup scripts under a hard non-prod guard, judgment-heavy work that nonetheless does not author features, so balanced tier fits.
-- Pure scan-and-list agents (`env-verifier` and the other `/open-the-shop` scanners) stay on the fast tier; judgment is cheap there.
+- Pure scan-and-list work (the `/open-the-shop` environment scan, the secrets scan and the key verification, the `/set-display-case` token checks, the `/setup-shop` config writer and CI detector, the `/final-quality-check` local gates) is no longer an agent tier question: it runs as a zero-dependency script in the skill's own `scripts/` folder, costs no model tokens and gives the same answer every time.
+- The `scaffold-writer` runs at balanced tier (`sonnet/medium`), one dispatch per Phase 3 sub-block, so the code-reviewer pass after each block still has its own review point.
 - Discovery (`code-explorer`, `scaffold-discovery`) and plan writing (`stage-planner`, `phased-plan-writer`, `master-checklist-synthesizer`) run at deep tier (`opus/medium`). Everything downstream builds on their output: a missed caller, a wrong stack fingerprint or a vague plan line costs a whole slice of rework, far more than the Opus tokens spent up front.
 - The `token-expander` in `set-display-case` runs at deep tier (`opus/medium`) because brand token expansion is a genuinely creative act; the output constrains the entire visual system.

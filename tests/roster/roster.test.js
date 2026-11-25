@@ -1,5 +1,5 @@
 // tests/roster/roster.test.js
-// Holds the agent roster and its legacy names together: every "Now" target in the legacy table's "Renamed in 7.0.0" section is a registered agent, every agent its "Planned, not yet" note names is still registered and still its own role in the Pass, and no skill or command dispatches a removed agent name outside the legacy pointer lines.
+// Holds the agent roster and its legacy names together: every "Now" target in the legacy table's "Renamed in 7.0.0 and 7.1.0" section is a registered agent or a script that exists, every retired name is gone from the roster, and no skill or command dispatches a removed agent name outside the legacy pointer lines.
 'use strict';
 
 const test = require('node:test');
@@ -35,9 +35,9 @@ function section(text, title) {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
-/** The rows of the "Renamed in 7.0.0" table: old name, the agent it now is (null for "none"), and the link the row gives. */
+/** The rows of the "Renamed in 7.0.0 and 7.1.0" table: old name, the agent it now is (null for "none" or a script), the script path when the row links one, and the link. */
 function renamedRows() {
-  const body = section(read(TABLE), 'Renamed in 7.0.0');
+  const body = section(read(TABLE), 'Renamed in 7.0.0 and 7.1.0');
   const rows = [];
   for (const line of body.split('\n')) {
     const cells = line.split('|').map(cell => cell.trim());
@@ -48,6 +48,11 @@ function renamedRows() {
       rows.push({ old, agent: null, link: null });
       continue;
     }
+    const script = /^\[`([a-z0-9-]+\.js)`\]\(([^)]+)\)$/.exec(now);
+    if (script) {
+      rows.push({ old, agent: null, link: script[2], script: true });
+      continue;
+    }
     const match = /^\[`([a-z0-9-]+)`\]\(([^)]+)\)$/.exec(now);
     assert.ok(match, `${TABLE}: the Now cell of ${old} is neither "none" nor a linked agent: ${now}`);
     rows.push({ old, agent: match[1], link: match[2] });
@@ -55,19 +60,7 @@ function renamedRows() {
   return rows;
 }
 
-/** Every agent name the "Planned, not yet" note lists, from its bullet lines. */
-function plannedNames() {
-  const body = section(read(TABLE), 'Planned, not yet');
-  const names = [];
-  for (const line of body.split('\n')) {
-    if (!line.startsWith('- ')) continue;
-    const before = line.split(':')[0];
-    for (const match of before.matchAll(/`([a-z0-9-]+)`/g)) names.push(match[1]);
-  }
-  return names;
-}
-
-test('every Now target of the renamed table is a registered agent whose link resolves, and no old name is still registered', async () => {
+test('every Now target of the renamed table is a registered agent or an existing script whose link resolves, and no old name is still registered', async () => {
   const registered = registeredAgents();
   const { LEGACY_AGENT_ALIASES } = await loadPolicy();
   const rows = renamedRows();
@@ -76,6 +69,13 @@ test('every Now target of the renamed table is a registered agent whose link res
     assert.ok(!registered.has(row.old), `${row.old} is in the renamed table but still registered`);
     assert.ok(row.old in LEGACY_AGENT_ALIASES, `${row.old} is in the renamed table but not in LEGACY_AGENT_ALIASES`);
     assert.equal(LEGACY_AGENT_ALIASES[row.old].agent, row.agent, `${row.old}: the table and LEGACY_AGENT_ALIASES disagree`);
+    if (row.script) {
+      // A script row: the link resolves on disk and is the script the alias names.
+      const target = path.resolve(path.dirname(path.join(root, TABLE)), row.link);
+      assert.ok(fs.existsSync(target), `${row.old}: the script link ${row.link} does not resolve`);
+      assert.equal(path.relative(root, target), LEGACY_AGENT_ALIASES[row.old].script, `${row.old}: the table and LEGACY_AGENT_ALIASES name different scripts`);
+      continue;
+    }
     if (row.agent === null) continue;
     assert.ok(registered.has(row.agent), `${row.old} now names ${row.agent}, which is not a registered agent`);
     const target = path.resolve(path.dirname(path.join(root, TABLE)), row.link);
@@ -89,42 +89,22 @@ test('every Now target of the renamed table is a registered agent whose link res
   }
 });
 
-test('every agent the "Planned, not yet" note names is still registered, and every registered alias is in that note', async () => {
+test('every retired name is out of the roster, and the 7.1.0 merges reach scaffold-writer and scaffold-discovery with a block each', async () => {
   const registered = registeredAgents();
-  const { LEGACY_AGENT_ALIASES } = await loadPolicy();
-  const planned = plannedNames();
-  assert.ok(planned.length > 0, 'the planned note names no agent');
-  for (const name of planned) {
-    assert.ok(registered.has(name), `${name} is in the planned note but is no longer registered: move it to the renamed table`);
-    assert.ok(name in LEGACY_AGENT_ALIASES, `${name} is in the planned note but not in LEGACY_AGENT_ALIASES`);
-  }
+  const { LEGACY_AGENT_ALIASES, DEFAULT_ROLES, canonicalRole, legacyNamesOf } = await loadPolicy();
   for (const name of Object.keys(LEGACY_AGENT_ALIASES)) {
-    if (registered.has(name)) assert.ok(planned.includes(name), `${name} is a registered alias the planned note does not list`);
+    assert.ok(!registered.has(name), `${name} is an alias but still registered`);
+    assert.ok(!(name in DEFAULT_ROLES), `${name} is an alias but still has a default role`);
   }
-});
-
-test('an alias for an agent that is still registered stays inert in the Pass: its own role, its own config key, no legacy reach', async () => {
-  const registered = registeredAgents();
-  const { LEGACY_AGENT_ALIASES, DEFAULT_ROLES, DEFAULT_WATCHDOG, budgetMs, canonicalRole, legacyNamesOf, policyFrom } = await loadPolicy();
-  const inert = Object.keys(LEGACY_AGENT_ALIASES).filter(name => registered.has(name));
-  assert.ok(inert.length > 0, 'expected the planned agents to still be registered');
-  const camel = name => name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-  for (const name of inert) {
-    assert.ok(name in DEFAULT_ROLES, `${name} is registered but has no default role`);
-    assert.equal(canonicalRole(name), name);
-    assert.equal(canonicalRole(`bytheslice:${name}`), name);
-    const target = LEGACY_AGENT_ALIASES[name].agent;
-    if (target !== null) assert.ok(!legacyNamesOf(target).includes(name), `${name} reaches ${target} while still registered`);
-    assert.equal(budgetMs(name, DEFAULT_WATCHDOG), DEFAULT_WATCHDOG.budgetsMs.default);
-    // A modelTiers key under its name sets its own role, not as a legacy key.
-    const tier = DEFAULT_ROLES[name][0] === 'opus' ? 'sonnet' : 'opus';
-    const read = policyFrom({ modelTiers: { [camel(name)]: tier } });
-    assert.deepEqual(read.policy.roles[name], [tier], `modelTiers.${camel(name)} does not set ${name}`);
-    assert.deepEqual(read.overrides, [{ setting: `roles.${name}`, value: [tier], default: [...DEFAULT_ROLES[name]] }]);
+  assert.deepEqual([...registered].sort(), Object.keys(DEFAULT_ROLES).sort());
+  assert.ok(registered.has('scaffold-writer'));
+  const blocks = { 'e2e-installer': 'e2e', 'workflow-writer': 'workflows', 'husky-installer': 'husky', 'lint-config-writer': 'lint', 'branch-protection-writer': 'branch-protection' };
+  for (const [old, block] of Object.entries(blocks)) {
+    assert.deepEqual(LEGACY_AGENT_ALIASES[old], { agent: 'scaffold-writer', mode: block });
+    assert.equal(canonicalRole(old), 'scaffold-writer');
   }
-  // scaffold-writer does not exist yet, and framework-detector does not reach scaffold-discovery.
-  assert.ok(!registered.has('scaffold-writer'));
-  assert.deepEqual(legacyNamesOf('scaffold-discovery'), []);
+  assert.deepEqual(legacyNamesOf('scaffold-writer'), Object.keys(blocks));
+  assert.deepEqual(legacyNamesOf('scaffold-discovery'), ['framework-detector']);
 });
 
 /**
