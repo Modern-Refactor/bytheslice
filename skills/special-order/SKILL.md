@@ -197,6 +197,8 @@ The chosen approach's `proposed_stages` replace the feature's `proposed_stages` 
 
 **Interactive runs record the choice too:** one `bts_note` per multi-stage feature naming the approach the operator picked, and the same Phase 4 hand-off to the stage file.
 
+**Renumber the batch after every choice is applied.** A chosen approach can hold more or fewer stages than the recommended one, so its numbers can collide with the stages the planner gave later features (recommended stages 28 and 29 swapped for a three-stage approach would add a stage 30 that the next feature already owns). Once every feature's approach is set (picked, auto-picked, or revised), renumber the whole selected batch in feature order from the highest existing stage number plus one, and remap every `depends_on` that points at a renumbered stage, inside the batch or from another new stage. Render the table below, pass stage numbers to the Phase 4 writers, and append to the checklist in Phase 5 only from this renumbered batch. A single-stage-only batch with no approach changes keeps the planner's numbers.
+
 Then render the planner's output (with the chosen approaches applied) as a compact table:
 
 ```
