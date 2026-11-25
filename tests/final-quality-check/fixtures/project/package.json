@@ -1,0 +1,15 @@
+{
+  "name": "run-gates-fixture",
+  "private": true,
+  "scripts": {
+    "lint": "node -e \"console.log('lint ok')\"",
+    "typecheck": "node -e \"console.log('typecheck ok')\"",
+    "check:design-system": "node -e \"console.log('design system ok')\"",
+    "test": "node -e \"console.error('unit test failed: expected 2, got 3'); process.exit(1)\"",
+    "build": "node -e \"console.log('build ok')\"",
+    "test:e2e:feature": "node -e \"console.log('  1) [feature] › e2e/feature/smoke.spec.ts:4:3 › @feature smoke › home page loads'); process.exit(1)\"",
+    "test:e2e:regression": "node -e \"console.log('regression ok')\"",
+    "test:e2e:visual": "node -e \"const fs=require('fs');const d='tests/visual/baselines';if(process.argv.includes('--update-snapshots')){fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/home-mobile.png','png');console.log('baselines written')}else if(!fs.existsSync(d+'/home-mobile.png')){console.error('missing baseline');process.exit(1)}else console.log('visual ok')\" --",
+    "test:e2e:smoke": "node -e \"console.log('smoke ok')\""
+  }
+}

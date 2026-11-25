@@ -43,9 +43,6 @@ When two sources disagree, the higher-precedence source wins. The orchestrator l
     "uiReviewer": "sonnet",       // was breakUiRunner + designCritic
     "stateIllustrator": "sonnet",
     "tokenExpander": "opus",
-    "bundleValidator": "sonnet",
-    "compliancePreCheck": "sonnet",
-    "envVerifier": "haiku",
     "prdReviewer": "sonnet",
     "phasedPlanWriter": "opus",   // also writes the DB schema stage (was dbSchemaStageWriter)
     "masterChecklistSynthesizer": "opus",
@@ -187,6 +184,7 @@ The v5 verification agents are `sliceTester` (independent behavioral tester) and
 | `modernUxExpert`, `layoutArchitect` | `uxLayoutDesigner` |
 | `blockComposer`, `componentCrafter` | `uiBuilder` |
 | `bootstrapRunner`, `proposalDrafter`, `consistencyChecker` | nothing (those agents were deleted; the key is ignored) |
+| `envScanner`, `githubSecretsScanner`, `checklistGenerator`, `envVerifier`, `bundleValidator`, `compliancePreCheck`, `configGenerator`, `ciCdDetector` | nothing (each is now a deterministic script with no model: `env-inventory.js`, `token-check.js`, `write-config.js`, `detect-ci.js`; the key is ignored) |
 
 **Retired keys only raise.** A retired key may only raise the new agent's tier above its default, never lower it: `specReviewer: "sonnet"` alone leaves `codeReviewer` on `opus`, and `stageDecomposer: "sonnet"` leaves `stagePlanner` on `opus`, while `designCritic: "opus"` raises `uiReviewer` from `sonnet` to `opus`. A retired key that would lower the tier is ignored, and the Pass records one `policy-override` note with `ignored: true`. To choose a lower tier, use the new name: a key under the new name sets any tier.
 
@@ -252,7 +250,7 @@ How a finished slice reaches `main`, and how long a slice may run before the con
 
 The gates a project runs are the operator's decision, made at setup. When an enabled gate fails during a run, agents fix the code until it passes; they never report the failure as an open decision, a follow-up or "the operator's call". The full rule, the gate classes and the escalation exceptions live in [`quality-gates.md`](../../sell-slice/references/quality-gates.md).
 
-- **`enforcement`** *(string, default `"fix"`)* - `"fix"` is the only value: a failing enabled gate goes to the fix loop (3 local loops per slice, 3 CI rounds per PR, unchanged), including when its root cause is a shared design token or a file the slice only consumes. `/setup-shop` writes it explicitly so the rule sits in the project's own config, where every agent reads it. Any other value is read as `"fix"`, with one line in the resolved-config log. There is no global off switch: relax one gate class with `advisory`, or turn the gate off where it is configured (for example `verification.e2e.visual: "off"`). This key is unrelated to the top-level `enforcement` key removed in 6.1.0, which is still ignored.
+- **`enforcement`** *(string, default `"fix"`)* - `"fix"` is the only value: a failing enabled gate goes to the fix loop (3 local loops per slice, 3 CI rounds per PR, unchanged), including when its root cause is a shared design token or a file the slice only consumes. `/setup-shop` writes it explicitly so the rule sits in the project's own config, where every agent reads it: **`scripts/write-config.js` always writes `gates.enforcement: "fix"`**, uncommented, whatever the answers say. Any other value is read as `"fix"`, with one line in the resolved-config log. There is no global off switch: relax one gate class with `advisory`, or turn the gate off where it is configured (for example `verification.e2e.visual: "off"`). This key is unrelated to the top-level `enforcement` key removed in 6.1.0, which is still ignored.
 - **`advisory`** *(string[], default `[]`)* - gate classes the operator marked advisory: `lint`, `typecheck`, `build`, `tests`, `e2e`, `visual`, `design-system`, `accessibility`, `ci`, `declared`. They still run, and their findings are listed as warnings, but they never fail a slice and never enter the fix loop. `ci_integrity` and the manifest backstop cannot be advisory. Only the operator sets this; an agent never adds a class to it.
 - **`declared`** *(array, default `[]`)* - extra project gates. An entry is a command string (`"pnpm check:links"`) or `{ "name": "links", "command": "pnpm check:links" }`. `slice-verifier` runs each once at tier 3 (check key `declared.<name>`, the name defaulting to the command) and routes a failure to the fix loop like any built-in gate. Every command the project's `.husky/pre-push` hook or CI workflows already run counts as enabled whether or not it is listed here.
 

@@ -147,7 +147,7 @@ Confirm the slice diff has not weakened the CI safety net. For each `.github/wor
 
 Additive changes (new jobs/steps/tags, longer timeouts, more matrix entries) are fine. **Additive only**: never approve removing or weakening a gate. If you cannot tell whether a workflow change is additive vs. destructive, treat it as a **violation** (no silent skips). Any violation makes `ci_integrity: fail`. If no workflow files are in the diff, `ci_integrity: pass`.
 
-> Note: the four scaffold artifacts (`.husky/pre-push`, the PR template, `e2e-coverage.yml`, the branch-protection script) and the `on: pull_request` feature-gate triggers are produced/owned by `final-quality-check`'s `workflow-writer`. You do **not** re-verify their presence here; that scaffolding lives at the project level, not per-slice. Your CI-integrity check is scoped to *this slice's diff not weakening what exists*.
+> Note: the four scaffold artifacts (`.husky/pre-push`, the PR template, `e2e-coverage.yml`, the branch-protection script) and the `on: pull_request` feature-gate triggers are produced/owned by `final-quality-check` (its `scaffold-writer` sub-blocks, plus the PR template the orchestrator writes in sub-block D). You do **not** re-verify their presence here; that scaffolding lives at the project level, not per-slice. Your CI-integrity check is scoped to *this slice's diff not weakening what exists*.
 
 ### 6 - Manifest under-declaration backstop (§1.4, the v5-native gate)
 

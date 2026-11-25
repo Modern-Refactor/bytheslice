@@ -17,7 +17,7 @@ The skill is a human-in-the-loop gate that ensures all required environment vari
 2. Maps variables to known external services (Supabase, Stripe, Resend, Clerk, Auth0, etc.) and groups them.
 3. Detects GitHub Actions secrets referenced in CI workflows.
 4. Generates a manual setup checklist with provisioning links and waits for user confirmation.
-5. Verifies (via the `env-verifier` subagent) that every required key is present and non-placeholder in `.env.local`.
+5. Verifies (with `scripts/env-inventory.js verify`, which prints key names only) that every required key is present and non-placeholder in `.env.local`.
 
 Under `run.unattended: true` (set by `/pizza-party`) it skips the manual checklist and the wait: the providers the operator authorized (a logged-in CLI or a connected MCP) write `.env.local` through their own tooling, the agent never reads or prints a value, and a service with no authorized provider gets a local substitute, an omission (when optional) or a deferral, each recorded in the order ticket.
 

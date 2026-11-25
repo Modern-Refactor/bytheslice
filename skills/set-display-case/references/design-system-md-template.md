@@ -313,7 +313,7 @@ This is the structural template for the design system documentation file written
 
 **Dark Mode Strategy:** TBD — `.dark` class on `<html>` element (Tailwind `darkMode: 'class'`), or `[data-theme="dark"]` attribute, or system `prefers-color-scheme`.
 
-**Coverage:** Every color token defined in the Surface Colors, Brand Colors, Semantic Colors, Neutrals, Charts, and Sidebar sections above must have both a light and dark value. The `compliance-pre-check` agent enforces this.
+**Coverage:** Every color token defined in the Surface Colors, Brand Colors, Semantic Colors, Neutrals, Charts, and Sidebar sections above must have both a light and dark value. `scripts/token-check.js complete` enforces this.
 
 **Color Format:** TBD — OKLCH, HSL, or hex. Document the chosen format here; all tokens in `globals.css` must use the same format consistently.
 
@@ -341,7 +341,7 @@ To regenerate or update this file, run `/set-display-case` with the updated bund
 
 ## Rules for Filling This Template
 
-1. **Never leave TBD in a real project.** Every TBD slot must be replaced with an actual value before the `compliance-pre-check` gate can pass.
+1. **Never leave TBD in a real project.** Every TBD slot must be replaced with an actual value before the `token-check.js complete` gate can pass.
 2. **Remove optional sections** that are not applicable to the project (sidebar for non-app-shell projects, optional semantic colors, optional font families).
 3. **Remove the unchosen type scale option** (Option A or Option B) — leave only the one the project uses.
 4. **Color format consistency**: once a color format is chosen (OKLCH, HSL, hex), use it throughout. Document the choice under "Dark Mode — Color Format."

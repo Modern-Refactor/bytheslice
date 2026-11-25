@@ -42,10 +42,20 @@ Read all of these before beginning:
 
 | Step | Agent file | Model | Effort | Mode |
 | --- | --- | --- | --- | --- |
-| Mode A, Step 1 | [agents/bundle-validator.md](agents/bundle-validator.md) | sonnet | medium | readonly |
 | Mode B, Step 1 | [agents/token-expander.md](agents/token-expander.md) | opus | medium | write |
-| Step 2 (always) | [agents/compliance-pre-check.md](agents/compliance-pre-check.md) | sonnet | medium | readonly |
 | Step 6 (always) | [agents/library-route-scaffolder.md](agents/library-route-scaffolder.md) | sonnet | medium | write |
+
+## Scripts
+
+The two mechanical checks are one deterministic, zero-dependency Node script, run from this skill's folder. It reads the token names from [references/token-checklist.md](references/token-checklist.md) on every run and prints one JSON object on stdout. Exit 0 is a verdict (read `status`); exit 2 prints `{"needs_human": {"category", "question", "context"}}`, which this skill raises with `bts_hitl` (or bubbles in its return contract) and stops on; exit 1 is a real error: report the stderr line.
+
+| Step | Command | Checks |
+| --- | --- | --- |
+| Mode A, Step 1 | `node scripts/token-check.js bundle <bundle path> --sidebar\|--no-sidebar` | Bundle structure (a CSS file with `:root {`, `tailwind.config.ts`/`.js` or a CSS `@theme` block, a token reference `.md`), token completeness per category, dark-mode parity, canonicalized paths. A missing bundle or primary file exits 2 (`prd_ambiguity`); token gaps return `status: fail` with `missing_categories` and `missing_tokens`. |
+| Step 2 (always) | `node scripts/token-check.js complete <css entry> <tailwind.config.ts> <root>/docs/design-system.md --sidebar\|--no-sidebar` | The design-system gate: every category in the checklist, OKLCH layer contrast (adjacent layers at least 2 lightness points apart in light and dark), dark-mode parity and strategy, the Tailwind bindings (or the `@theme` block when there is no `tailwind.config`), and no `TBD` left in `docs/design-system.md`. Returns `gate: PASS \| FAIL`, per-category `missing`, `tbd_slots`, `layer_contrast`, `warnings`. An unreadable input exits 2 (`prd_ambiguity`). |
+| Mode B, Step 2 (pre-write) | `node scripts/token-check.js complete --draft <root>/docs/design-system-draft.md --sidebar\|--no-sidebar` | The same gate on token-expander's approved draft tables, before any final file exists; the Tailwind bindings row is `N/A` until Step 3 re-runs `complete` on the written files. |
+
+Pass `--sidebar` when Step 1 found an app shell and `--no-sidebar` when it did not; without either the script infers it from whether any `--sidebar*` token exists.
 
 ---
 
@@ -53,8 +63,8 @@ Read all of these before beginning:
 
 Honor these `bytheslice.config.json` keys when present (see [`skills/setup-shop/references/bytheslice-config-schema.md`](../../setup-shop/references/bytheslice-config-schema.md)):
 
-- `mcps.shadcn`, `mcps.figma`, `mcps.magic`, declarative MCP availability for the bundle-validator and token-expander agents
-- `modelTiers.tokenExpander`, `modelTiers.bundleValidator`, `modelTiers.compliancePreCheck`, override agent model tiers for THIS run
+- `mcps.shadcn`, `mcps.figma`, `mcps.magic`, declarative MCP availability for the token-expander agent
+- `modelTiers.tokenExpander`, override the agent model tier for THIS run (the bundle and gate checks are a script and take no tier)
 - `ui.registries`, the operator's own registry preferences (namespaces such as `"@magicui"`, or `{ name, catalog, item, theme?, notes? }` objects; see [`ui-sources.md`](../sell-slice/references/ui-sources.md)). The public shadcn directory never supplies a theme; only an operator entry with a `theme` does. Mode B installs the first entry's `theme` item on a greenfield project (see "Registry theme" below). Empty or absent: today's behavior, no theme install.
 - `run.unattended`, `true` when nobody is watching the run (`/pizza-party` sets it). Every operator prompt in this skill then takes its recommended answer and records it (see "Unattended runs" below). HITL bubbles in the return contract still bubble.
 
@@ -72,10 +82,10 @@ The user has run a Claude Design session at `claude.ai/design` and provides a de
 - Explicit statement that a Claude Design session was completed
 
 **Flow:**
-1. Read the bundle folder (dispatch `agents/bundle-validator.md`)
-2. Validate token completeness (dispatch `agents/compliance-pre-check.md`)
-3. If gaps found: report missing categories → prompt user to fill them via `ask_user_input_v0`
-4. Canonicalize file paths and write output artifacts
+1. Validate the bundle folder: `node scripts/token-check.js bundle <bundle path> --sidebar|--no-sidebar` (exit 2 means the path or a primary file is missing: raise its `needs_human`)
+2. Validate token completeness: `node scripts/token-check.js complete` on the bundle's `canonicalized_paths` (CSS file, Tailwind config, token reference document)
+3. If gaps found: report missing categories → prompt user to fill them via `ask_user_input_v0`, then re-run step 2
+4. Write output artifacts from the canonicalized paths, then re-run `complete` on the written project files (Step 3)
 5. Capture project-specific code patterns (Step 4 below)
 6. Append rules block to project rules file
 7. Copy bundle into `docs/design-bundle/` as audit trail
@@ -92,8 +102,8 @@ No bundle provided. Skill generates the token system from a brand brief.
 3. Dispatch `bytheslice:token-expander` (opus, medium effort, enforced by registration): `mode: full` generates a complete token system; `mode: brand-layer` (after step 2) proposes values only for the theme's documented brand layer
 4. Surface the generated tokens to the user for approval via `ask_user_input_v0`. **Unattended:** take the generated tokens as approved, record the choice under "Decisions made without review" in `docs/design-system.md`, and continue
 5. If user requests changes: apply them and re-surface (cap at 2 rounds; third round → HITL `creative_direction`)
-6. Dispatch `bytheslice:compliance-pre-check` to verify completeness on the approved tokens
-7. Write output artifacts from approved token set
+6. Run `node scripts/token-check.js complete --draft docs/design-system-draft.md --sidebar|--no-sidebar` to verify completeness on the approved tokens (the pre-write gate)
+7. Write output artifacts from approved token set, then re-run `complete` on the written files (Step 3)
 8. Capture project-specific code patterns (Step 4 below)
 9. Append rules block to project rules file
 
@@ -107,7 +117,7 @@ A configured registry can ship a full token contract as a `theme` item, built so
 - **Install.** `yes n | npx shadcn@latest add "<item template with {name} = theme>" --yes`. Never `--overwrite`: `yes n` keeps every existing file and lets the rest install in a shell with no terminal.
 - **Find the brand layer.** Read the entry's `notes` and the comments the theme wrote into the CSS entry. Pass the brand-layer variable names and their installed values to `token-expander` with `mode: brand-layer`. If no brand layer is documented, fall back to `mode: full` and record that the theme was installed without one.
 - **Write only the brand layer.** After approval, set the brand-layer values in the CSS entry; never restate the derived tokens or the theme's formulas. `docs/design-system.md` records the theme source (registry, item, install command) under Provenance and documents the derived token vocabulary the registry's items use.
-- `compliance-pre-check` still gates the result. A category the theme does not cover goes back to `token-expander` (`missing_categories`) and lands in the theme's own extension point, never a second token file.
+- `token-check.js complete` still gates the result. A category the theme does not cover goes back to `token-expander` (`missing_categories`, from the gate's `failed_categories`) and lands in the theme's own extension point, never a second token file.
 
 #### Unattended runs
 
@@ -138,16 +148,16 @@ Collect:
 
 ## Step 2: Token Validation Gate
 
-Dispatch `bytheslice:compliance-pre-check` after collecting or generating tokens.
+Run `node scripts/token-check.js complete` after collecting or generating tokens: on the bundle's canonicalized files in Mode A, on `docs/design-system-draft.md` with `--draft` in Mode B (see Scripts above).
 
-The gate **refuses to complete** until every required token category from `references/token-checklist.md` is satisfied. No partial passes.
+The gate **refuses to complete** until every required token category from `references/token-checklist.md` is satisfied. No partial passes: `gate: PASS` needs every category `PASS` (sidebar `N/A` without an app shell), every color token with a dark value, no `TBD` slot in the document, and the type scale, spacing, motion, breakpoint and z-index decisions documented.
 
-If any category is missing:
+If any category is missing (`failed_categories`, each row's `missing` names the tokens or the gap):
 - Report which categories are absent with their required token names
-- In Mode A: prompt the user to provide the missing values
-- In Mode B: loop `token-expander` for the missing categories (counts toward the 2-round cap)
+- In Mode A: prompt the user to provide the missing values, then re-run the gate
+- In Mode B: loop `token-expander` with `missing_categories` set to `failed_categories` (counts toward the 2-round cap), then re-run the gate on the new draft
 
-Do not proceed to artifact writing until `compliance-pre-check` returns `status: pass`.
+An exit 2 (an input the script cannot read) is a `prd_ambiguity` HITL, not a gate failure. Do not proceed to artifact writing until `complete` returns `status: pass`.
 
 ---
 
@@ -163,6 +173,8 @@ Once the gate passes, write these files in the target project:
 | Bundle audit trail | `docs/design-bundle/` | Mode A only, copy of the Claude Design export |
 
 Use the templates in `references/` as the structural basis. Fill in project-specific values.
+
+Then run the final gate on what was written: `node scripts/token-check.js complete <css entry> <root>/tailwind.config.ts <root>/docs/design-system.md --sidebar|--no-sidebar` (leave out the Tailwind path when the CSS entry maps the tokens with `@theme`). It must return `status: pass` before Step 4; a failure here is fixed in the written files (it most often means a binding or the `darkMode` setting drifted from the approved tokens) and the gate re-run.
 
 **Design-critique context.** `ui-reviewer` (`critique` mode) (the vendored impeccable critique, run at `/inspect-display`, the Library Preview Gate and each pie boundary) reads `PRODUCT.md` and `DESIGN.md` at the repo root when they exist, otherwise the project's design-system rules file. Make sure one of them exists before returning: `docs/design-system.md` above satisfies it, so record its path as `design_context` in the return contract. If the project already has a `PRODUCT.md`, `DESIGN.md` or another design-rules file (for example `.interface-design/system.md`), keep it, list it in `design_context` too, and never overwrite it. Write no new `PRODUCT.md` or `DESIGN.md` unasked.
 
@@ -278,7 +290,7 @@ This skill does NOT call `ask_user_input_v0` for HITL resolution, it bubbles up 
 - [ ] Input mode determined (bundle-first or brief-first)
 - [ ] Bundle validated OR token system generated and user-approved (or, unattended, taken and recorded under "Decisions made without review")
 - [ ] Greenfield + a configured registry `theme`: theme installed with `yes n | npx shadcn@latest add ... --yes` (never `--overwrite`) and only its brand layer set; no parallel token file invented
-- [ ] `compliance-pre-check` returned `status: pass` for all token categories
+- [ ] `token-check.js complete` returned `status: pass` for all token categories, on the approved tokens and again on the written files
 - [ ] Sidebar tokens included if project has an app shell
 - [ ] Dark mode tokens defined for every color token
 - [ ] `app/globals.css` (or `src/app/globals.css`) written with all token definitions

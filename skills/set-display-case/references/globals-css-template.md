@@ -5,7 +5,7 @@ purpose: Structural template for the app/globals.css output artifact. Fill in pr
 
 # globals.css Template
 
-This is the structural template for the CSS token file written by `set-display-case`. The `token-expander` agent (Mode B) or the `bundle-validator` agent (Mode A) supplies the actual values. This file defines the shape and organization only.
+This is the structural template for the CSS token file written by `set-display-case`. The `token-expander` agent (Mode B) or the validated Claude Design bundle (Mode A, checked by `scripts/token-check.js bundle`) supplies the actual values. This file defines the shape and organization only.
 
 **Target path:** `app/globals.css` or `src/app/globals.css` — detect from project structure.
 

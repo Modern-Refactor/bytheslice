@@ -56,7 +56,7 @@ For each key still missing after the provider pass:
 
 | The key's service | Under `run.unattended: true` |
 |---|---|
-| **Optional** (the `.env.example` line or the comment above it says optional, or the code guards it, or it is analytics, error tracking or similar the main flow does not need) | Leave it out. Record it under "Decisions made without you" and pass it to `env-verifier` as an excused key. |
+| **Optional** (the `.env.example` line or the comment above it says optional, or the code guards it, or it is analytics, error tracking or similar the main flow does not need) | Leave it out. Record it under "Decisions made without you" and pass it to `env-inventory.js verify --excused` as an excused key. |
 | **Required, with a local substitute** | Use the substitute, write its local, non-secret values with `merge-env.js`, record it. The slices build against the substitute; the ticket line says which service it replaces. |
 | **Required, no local substitute** | The app cannot run without it. Mark every slice that needs it deferred in the master checklist (row stays `[ ]`, `**Status:** deferred: needs <service> credentials`), record the blocker under **Deferred**, excuse its keys, and return `status: complete_with_deferrals`. |
 
@@ -75,7 +75,7 @@ A generated local secret (a session signing key, for example) is created by a co
 
 ## GitHub Actions secrets
 
-Set only secrets a workflow under `.github/workflows/` references (`github-secrets-scanner` lists them). Under ship-once only the app's final PR runs CI, so set them any time before that PR. Pipe each value from the same provider tooling, never through the agent:
+Set only secrets a workflow under `.github/workflows/` references (`env-inventory.js secrets` lists them). Under ship-once only the app's final PR runs CI, so set them any time before that PR. Pipe each value from the same provider tooling, never through the agent:
 
 ```bash
 T=$(mktemp); vercel env pull "$T" --environment=development --yes >/dev/null

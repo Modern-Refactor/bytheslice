@@ -841,7 +841,7 @@ Add `- [ ] No design-system-compliance violations (`pnpm check:design-system` gr
 
 ### `.github/workflows/ci.yml` (lean)
 
-Job order: lint → typecheck → unit-tests → build → e2e-smoke. When a design system exists, insert the standard `design-system-compliance` job (verbatim from the standard `ci.yml`) after `lint` and point `typecheck`'s `needs` at it. When `framework-detector` returned skip-E2E, drop the `e2e-smoke` job.
+Job order: lint → typecheck → unit-tests → build → e2e-smoke. When a design system exists, insert the standard `design-system-compliance` job (verbatim from the standard `ci.yml`) after `lint` and point `typecheck`'s `needs` at it. When `scaffold-discovery`'s `e2e_plan` is skip-E2E (`e2e_skipped: true`), drop the `e2e-smoke` job.
 
 ```yaml
 name: CI

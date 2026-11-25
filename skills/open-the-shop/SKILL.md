@@ -5,7 +5,7 @@ user-invocable: true
 triggers: ["/bytheslice:open-the-shop", "/open-the-shop", "stock the line", "open for business", "doors open", "/bytheslice:setup-environment", "/setup-environment", "env setup", "env-setup stage"]
 ---
 <!-- skills/open-the-shop/SKILL.md -->
-<!-- Daily-prep skill - the LAST step before /sell-slice. Pizza-shop framing: doors unlock, lights flip, OPEN sign goes up. Orchestrator-only: dispatches env-scanner, github-secrets-scanner, checklist-generator, and env-verifier to gate the project on a fully populated environment. Mode-detected (standalone vs sequential). Most HITL-heavy prep step - operator personally provides credentials. -->
+<!-- Daily-prep skill - the LAST step before /sell-slice. Pizza-shop framing: doors unlock, lights flip, OPEN sign goes up. Orchestrator-only: runs scripts/env-inventory.js (scan, secrets, checklist, verify) to gate the project on a fully populated environment. Mode-detected (standalone vs sequential). Most HITL-heavy prep step - operator personally provides credentials. -->
 
 # Open the Shop - Environment Gate
 
@@ -22,24 +22,25 @@ Honor an explicit `--standalone` or `--sequential` flag if passed; otherwise aut
 
 **Unattended runs.** When `bytheslice.config.json` sets `run.unattended: true` (`/pizza-party` does), Phases 3 and 4 take the **provider-provisioned path** below instead of the manual checklist, and nothing waits on a human: the operator accepted that risk by launching the run. Every choice made in the operator's place is one line in the order ticket's "Decisions made without you" section (`docs/pizza-party/order.md`). Without `run.unattended`, the interactive path is unchanged.
 
-## Subagent Roster
+## Scripts
 
-Each agent is a **registered plugin agent**: dispatch by type `bytheslice:<name>` (Agent tool `subagent_type`, or `Workflow` `agentType`), passing only the task inputs as the prompt. The files under `./agents/` carry the role prompt plus enforced model/effort/tools. Fallback (Cursor, or a host without plugin-agent registration): Read the file and dispatch it per [`loop-workflow-fallback-pattern.md`](../cook-pizzas/references/loop-workflow-fallback-pattern.md) "Agent shape on the fallback path": its frontmatter goes first as a header (model tier and effort, the normalized tool allowlist, the read-only line for an agent without write tools, the no-git-writes line), then its body, then the inputs; log one self-check line per dispatch in the run log.
+Every mechanical step is one deterministic, zero-dependency Node script in `./scripts/`, run from this skill's folder. Each prints one JSON object on stdout and nothing else; it prints key names and paths, never a value. Exit 0 is a result (read `status` where there is one); exit 1 is a real error: report the stderr line and stop. `env-inventory.js` never exits 2 (it raises no HITL; the operator-access HITL below is this skill's).
 
-| Phase | Agent file | Model | Effort | Mode |
-|-------|-----------|-------|--------|------|
-| 0 | [agents/env-scanner.md](agents/env-scanner.md) | haiku | low | readonly |
-| 2 | [agents/github-secrets-scanner.md](agents/github-secrets-scanner.md) | haiku | low | readonly |
-| 3 | [agents/checklist-generator.md](agents/checklist-generator.md) | haiku | low | readonly |
-| 5 | [agents/env-verifier.md](agents/env-verifier.md) | haiku | low | readonly |
+| Phase | Command | Returns |
+|-------|---------|---------|
+| 0 | `node scripts/env-inventory.js scan --root <workspace root>` | `env_examples_found` (path, `expected_local_path`, keys with docstrings), `total_keys_unique`, `no_env_examples_found` |
+| 2 | `node scripts/env-inventory.js secrets --root <workspace root>` | `github_secrets_referenced` (name, workflows, `also_in_env_local`), `total_secrets_unique`, `no_workflows_found` |
+| 3 | `node scripts/env-inventory.js checklist --root <workspace root>` | `checklist_markdown`, `services_detected`, `services` (service, console URL, keys), `unknown_keys`, `total_checklist_items` |
+| 5 | `node scripts/env-inventory.js verify --root <workspace root> [--excused K1,K2]` | `status: pass \| fail`, `missing_files`, `missing_keys_per_file`, `placeholder_keys`, `excused_keys` |
 
 ## Reference Files
 
 | File | Purpose |
 | --- | --- |
-| [references/known-services-catalog.md](references/known-services-catalog.md) | Maps key prefixes → service + provisioning console URL. checklist-generator reads this. |
+| [references/known-services-catalog.md](references/known-services-catalog.md) | Maps key prefixes → service + provisioning console URL. `env-inventory.js checklist` reads it on every run, so a new catalog entry needs no code change. |
 | [references/env-checklist-template.md](references/env-checklist-template.md) | Structural pattern for the user-facing checklist. |
 | [references/provider-provisioning.md](references/provider-provisioning.md) | Unattended only: read-only authorization checks per provider, how provider tooling writes `.env.local`, local substitutes, and GitHub secrets from provider output. |
+| [scripts/env-inventory.js](scripts/env-inventory.js) | Phases 0, 2, 3 and 5: the `.env.example` scan, the CI secrets list, the checklist, and the `.env.local` verification (key names only). |
 | [scripts/merge-env.js](scripts/merge-env.js) | Unattended only: merges provider output into `.env.local`, filling only missing or placeholder keys, printing key names only. |
 
 ## When to Use
@@ -61,33 +62,33 @@ If no `.env.example` files are found at all, stop and tell the user - this likel
 
 ### Phase 0 - Scan
 
-Dispatch `env-scanner`. Receives the workspace root; returns the unique key list per `.env.example`.
+Run `node scripts/env-inventory.js scan --root <workspace root>`. It finds every `.env.example` at the repo root and under `apps/` and `packages/` (skipping `node_modules`, build output and dot-folders), and returns each file's keys (comment lines ignored, up to 3 comment lines above a key kept as its docstring) and the `.env.local` path each one expects. It never opens a `.env.local`. When `no_env_examples_found` is true, stop and tell the user (see Inputs and Preconditions).
 
 ### Phase 1 - Service Detection
 
-Wait for `env-scanner` output. The `checklist-generator` (Phase 3) handles the catalog cross-reference - no separate detection step needed in this skill.
+No separate step: Phase 3's `checklist` run maps each key to its service from the catalog.
 
 ### Phase 2 - GitHub Secrets Detection
 
-Dispatch `github-secrets-scanner` with `env-scanner`'s output. Returns the unique secret name list with workflow references.
+Run `node scripts/env-inventory.js secrets --root <workspace root>`. It reads every `${{ secrets.NAME }}` in `.github/workflows/*.yml` (skipping `vars.*`, which are Actions Variables, not secrets) and marks each name `also_in_env_local` when a `.env.example` lists it; the rest are CI-only. `no_workflows_found: true` is fine: the GitHub Secrets section just says none are needed.
 
-This skill cannot verify GitHub secrets directly (no read access to org secrets); it records the user's verbal confirmation only.
+This skill cannot verify GitHub secrets directly (no read access to org secrets, and it never fetches a value through the GitHub API); it records the user's verbal confirmation only.
 
 ### Phase 3 - Checklist Generation
 
-Dispatch `checklist-generator` with both scanner outputs and the path to the known-services catalog. Returns the rendered markdown checklist.
+Run `node scripts/env-inventory.js checklist --root <workspace root>`. It reads [references/known-services-catalog.md](references/known-services-catalog.md), maps each key to a service (a direct match wins, then the longest wildcard prefix, then the same lookups with `NEXT_PUBLIC_` and similar public prefixes stripped; no match goes to "Other / Unknown", never dropped), groups the keys in the catalog's order with Other / Unknown last, and renders `checklist_markdown`: one section per service with its console link, one `- [ ]` item per key naming the `.env.local` file(s) that need it and its docstring, then the GitHub Secrets section from Phase 2 and the final confirmation boxes.
 
-Display the checklist to the user in full. Include direct links to provisioning consoles from the catalog.
+Display `checklist_markdown` to the user in full and verbatim.
 
 ### Phases 3 and 4 under `run.unattended: true` - Provider-provisioned path
 
 Replaces the checklist display and the wait. Follow [references/provider-provisioning.md](references/provider-provisioning.md):
 
-1. **Map keys to services.** Dispatch `checklist-generator` as usual; use its `services_detected` grouping, not its markdown.
+1. **Map keys to services.** Run the Phase 3 `checklist` command as usual; use its `services` grouping, not its markdown.
 2. **Find the authorized provider per service.** Read the order ticket's **Answers** (Host, Database, Auth) for the provider and project each service uses. Confirm each with its read-only check (`vercel whoami`, `netlify status`, `wrangler whoami`, `supabase projects list`, `neonctl me`, `turso auth whoami`, `railway whoami`, `fly auth whoami`, `stripe config --list` with output discarded, and the like) or a connected MCP for it. Never pick a provider the operator has not authorized.
 3. **Let the provider tooling write the values.** Pipe each provider's output (`vercel env pull`, the `supabase` CLI, `netlify env:list --plain`, and the like) into `scripts/merge-env.js`, which fills only keys the `.env.example` lists that are missing or placeholder. The agent never prints, logs, reads back or types a secret value; an MCP supplies only public values (a project URL, a publishable key).
 4. **Keys no provider covered** follow the no-provider rule:
-   - **Optional** (the app runs without it): leave it out, record it, and pass it to `env-verifier` as excused.
+   - **Optional** (the app runs without it): leave it out, record it, and pass it to `verify --excused` (Phase 5).
    - **Required with a local substitute** (SQLite or a local Postgres for a database, a local session or magic-link-to-console for auth, a console logger for email): use the substitute, write its local values through `merge-env.js`, record it.
    - **Required with no substitute** (the app truly cannot run without it): mark every slice that needs it deferred in the master checklist (row stays `[ ]`, `**Status:** deferred: needs <service> credentials`), record the blocker under the ticket's **Deferred**, excuse its keys, and finish with `status: complete_with_deferrals`. Never `needs_human`.
 5. **Destructive operations on shared resources the operator did not name** (creating or deleting a project, resetting a database, rotating keys) are skipped and recorded, never asked about.
@@ -106,10 +107,10 @@ When the user confirms "done", proceed to Phase 5.
 
 ### Phase 5 - Verification
 
-Dispatch `env-verifier`. Under `run.unattended: true`, also pass `excused_keys`: the keys recorded in the ticket as optional-and-omitted or deferred. The verifier:
+Run `node scripts/env-inventory.js verify --root <workspace root>`. Under `run.unattended: true`, add `--excused K1,K2`: the keys recorded in the ticket as optional-and-omitted or deferred (a `.env.local` whose every key is excused may be absent). The script:
 - Confirms a `.env.local` exists alongside every `.env.example`
-- Confirms every key from `.env.example` is present in `.env.local` with a non-empty, non-placeholder value
-- Returns a structured result
+- Confirms every key from `.env.example` is present in `.env.local` with a non-empty value that is not a placeholder shape (only x's, `your_key_here` / `your-key-here`, `<...>`, `TODO`, `REPLACE_ME`, `changeme`, `insert_here`, `paste_here`, `sk-...`, `pk_test_x...` / `sk_test_x...` / `rk_test_x...`)
+- Prints key names and file paths only, never a value; it judges presence and placeholder shape, not whether a real-looking value is correct
 
 **If verification passes (`status: pass`):** proceed to Phase 6 - stage complete.
 
@@ -119,7 +120,7 @@ Under `run.unattended: true` there is no one to wait for: rerun the provider pas
 
 ### Phase 6 - Closeout
 
-1. After `env-verifier` returns `status: pass`, write the literal `pass\n` to `.claude/.bytheslice-state/env-check-passed` (create the state directory if needed). This local marker records only the successful check. Never write environment values, secret names, credentials, or verifier output into it. Remove an existing marker when a later verification fails so the kitchen does not display a stale pass. Record confirmation that all `.env.local` files pass verification.
+1. After `verify` returns `status: pass`, write the literal `pass\n` to `.claude/.bytheslice-state/env-check-passed` (create the state directory if needed). This local marker records only the successful check. Never write environment values, secret names, credentials, or verifier output into it. Remove an existing marker when a later verification fails so the kitchen does not display a stale pass. Record confirmation that all `.env.local` files pass verification.
 2. Record user's verbal confirmation that GitHub secrets are set (if any were listed in Phase 2). Under `run.unattended: true`, set only the secrets a workflow references, with `gh secret set` fed from the provider tooling through a pipe, never echoed (see the reference's "GitHub Actions secrets"). Under ship-once only the app's final PR runs CI, so this can happen any time before that PR; record each secret name set, and each referenced secret with no provider path.
 3. Mark the stage complete in `docs/plans/00_master_checklist.md`.
 4. Walk the [Completion Checklist](#completion-checklist) below and confirm every box is `[x]`.
@@ -133,7 +134,7 @@ Walk this checklist at the end of every run. The stage is not "done" until all i
 - [ ] All detected services are represented in the manual checklist displayed to the user
 - [ ] GitHub Secrets section was generated (or confirmed empty if no CI secrets needed)
 - [ ] User confirmed all provisioning steps are complete
-- [ ] `env-verifier` subagent returned `status: pass` with zero `missing_files`, zero `missing_keys_per_file`, and zero `placeholder_keys`
+- [ ] `env-inventory.js verify` returned `status: pass` with zero `missing_files`, zero `missing_keys_per_file`, and zero `placeholder_keys`
 - [ ] User confirmed GitHub repository secrets are set (or confirmed none are required)
 - [ ] If invoked as a `type: env-setup` stage by `sell-slice`, the master-checklist row is flipped to `Completed`
 
@@ -142,16 +143,16 @@ Under `run.unattended: true`, the rows "User confirmed all provisioning steps" a
 - [ ] Every service was filled by an authorized provider's tooling, a recorded local substitute, a recorded omission (optional), or a recorded deferral, each with its ticket line
 - [ ] No command output, log line, ticket line or report shows a secret value
 - [ ] Referenced GitHub secrets were set through a pipe from provider tooling, or recorded as having no provider path
-- [ ] `env-verifier` returned `status: pass` with every remaining gap listed under `excused_keys`
+- [ ] `env-inventory.js verify` returned `status: pass` with every remaining gap listed under `excused_keys`
 
 ## Hard Constraints
 
-- **Never read, log, or display actual secret values.** The `env-verifier` only checks existence and placeholder patterns - it never surfaces real values. This skill must not work around that constraint.
+- **Never read, log, or display actual secret values.** `env-inventory.js` only checks existence and placeholder shape and prints key names only. This skill must not work around that constraint (never `cat` a `.env.local`, never echo a value).
 - **The agent never writes a value into `.env.local` itself.** On the interactive path population is the user's manual action. Under `run.unattended: true`, provider tooling writes the values through `scripts/merge-env.js`, which fills only missing or placeholder keys and never replaces an operator-set value.
 - **Under `run.unattended: true`, never return `needs_human`.** A required service with no provider becomes a local substitute or a deferral (`status: complete_with_deferrals`).
-- **Never skip the verification loop.** Even if the user says "I've done everything", `env-verifier` must run before the stage is marked complete.
+- **Never skip the verification loop.** Even if the user says "I've done everything", `env-inventory.js verify` must run before the stage is marked complete.
 - **Sub-skill contract.** When invoked as a `type: env-setup` stage by `sell-slice`, this skill is the entire stage. After completion, mark the stage `Completed` in `docs/plans/00_master_checklist.md`.
-- **Subagent prompts live in `./agents/*.md`.** This SKILL.md is workflow only - never inline subagent prompts here.
+- **The mechanical steps live in `./scripts/`.** This SKILL.md is workflow only: run the scripts, never re-implement their checks by hand.
 
 ## Sub-agent Return Contract
 

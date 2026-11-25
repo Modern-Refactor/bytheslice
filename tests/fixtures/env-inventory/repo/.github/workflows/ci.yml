@@ -1,0 +1,11 @@
+name: CI
+on: [pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || '' }}
+      FEATURE_FLAG: ${{ vars.FEATURE_FLAG }}
+    steps:
+      - run: pnpm test

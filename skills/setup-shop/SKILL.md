@@ -29,6 +29,12 @@ Read all of these before beginning:
 | [references/model-tier-guide.md](references/model-tier-guide.md) | Per-agent model tier defaults; cross-link from `modelTiers` config block |
 | [references/bootstrap-templates-catalog.md](references/bootstrap-templates-catalog.md) | Documents which scaffolders Step 1 wraps (`create-next-app`, `create-turbo`, `create-vite`, `create-svelte`, `create-astro`) and why |
 | [references/framework-detect.md](references/framework-detect.md) | Canonical stack list, detection signals, and per-framework path map. Read this BEFORE Step 1's stack question and BEFORE any skill branches on framework. |
+| [scripts/write-config.js](scripts/write-config.js) | Step 2: writes the JSONC config from the answers over the example template, never overwriting without `--overwrite` or `--merge`. |
+| [scripts/detect-ci.js](scripts/detect-ci.js) | Step 3: checks the CI/CD baseline markers under the resolved quality tier. |
+
+## Scripts
+
+Both mechanical steps are deterministic, zero-dependency Node scripts in `./scripts/`, run from this skill's folder. Each prints one JSON object on stdout. Exit 0 is a result; exit 2 prints `{"needs_human": {"category", "question", "context"}}`: ask the operator that question (in Flow A to C the plan-mode question gate is the prompt), then re-run with their answer; exit 1 is a real error: report the stderr line and stop.
 
 ## Flow Selection
 
@@ -196,7 +202,7 @@ Generate a `bytheslice.config.json` at the project root (or `~/.bytheslice/defau
 > "You have system-wide defaults at `~/.bytheslice/defaults.json`. Want to use them as the starting point for this project?"
 > single_select: ["Yes, copy my system-wide defaults into this project", "No, answer the per-section questions below"]
 
-If yes: copy `~/.bytheslice/defaults.json` content into the project's `bytheslice.config.json` and skip Group 2, except **Q-gates** below, which always runs. Print the resolved values for the user to review.
+If yes: copy `~/.bytheslice/defaults.json` content into the project's `bytheslice.config.json` (`write-config.js --use-defaults`, with only the Q-gates answers in the answers file) and skip Group 2, except **Q-gates** below, which always runs. Print the resolved values for the user to review.
 
 If no: continue to Group 2.
 
@@ -210,7 +216,7 @@ One question per top-level config section. Multi-select where multiple apply, si
 > "How do you want to handle per-agent model tier assignments? Each agent has a default tier per [`skills/setup-shop/references/model-tier-guide.md`](references/model-tier-guide.md). Most projects don't need overrides."
 > single_select: ["Use plugin defaults (recommended)", "I'll edit the modelTiers block manually after generation"]
 
-If "Use plugin defaults": leave `modelTiers: {}` in the generated file. If "edit manually": leave `modelTiers: {}` plus a comment block listing the most-overridden agents (`implementer`, `qualityReviewer`, `sliceVerifier`) for the user to fill in.
+Either answer leaves `modelTiers` with no active keys: the template's comment block listing the most-overridden agents (`implementer`, `codeReviewer`, `sliceTester`, `sliceVerifier`) stays for the user to fill in.
 
 **Q-stages**
 > "Use the default stage shape (6 tasks max per stage, at most 20 to 30 feature stages, fewer for a small app)? The defaults work for most projects. Lower the task cap for tighter slices; the band is a ceiling, never a target to pad toward."
@@ -276,10 +282,19 @@ Write `gates.enforcement: "fix"` whatever the answers, plus `gates.advisory` and
 
 ### Phase: Write the config file
 
-Generate the JSONC file. Use [`references/bytheslice.config.example.json`](references/bytheslice.config.example.json) as the structural template. Fill in only the sections the user customized; leave the rest commented out. The `gates` block is the exception: `"enforcement": "fix"` is always written uncommented, so the rule is visible in the project's own config.
+Write the answers to a JSON file in the session scratchpad (never in the project), then run:
 
-- Flow A target: `~/.bytheslice/defaults.json` (create the directory if missing: `mkdir -p ~/.bytheslice`)
+```sh
+node scripts/write-config.js --flow <A|B|C> --answers <answers.json> [--project-root <project root>] [--use-defaults]
+```
+
+The answers file holds one key per question, each optional: `modelTiers` (`"defaults"`, `"manual"` or an object of agent tiers), `stages` (`{ "maxTasksPerStage", "targetFeatureStages" }`), `mcps` (the Q-mcps labels, or `["None"]`), `visualReview` (`{ "tools": [...], "vizzly": true|false }`), `hitl` (the `<name>: <prompt-hint>` lines), `rules` (the URLs), `bootstrap` (`{ "variant", "stack", "roadmapFile" }`, Flow A only), and `gates` (`{ "advisory": [...], "declared": [...] }`, a declared line read as `<name>: <command>` or a bare command). Any other section object (`verification`, `delivery`, `quality`, `run`, ...) passes through as given.
+
+The script uses [`references/bytheslice.config.example.json`](references/bytheslice.config.example.json) as the structural template: a section the user customized gets their values (the hints for keys they left alone stay commented), every other section stays exactly as the template's commented-out block. The `gates` block is the exception: `"enforcement": "fix"` is always written uncommented, whatever the answers say, so the rule is visible in the project's own config; `advisory` only ever holds classes the operator picked. It refuses an answer that looks like a pasted credential (exit 2, `external_credentials`; the value is never printed) and checks the output parses as JSONC before it writes.
+
+- Flow A target: `~/.bytheslice/defaults.json` (the script creates `~/.bytheslice`)
 - Flow B / C target: `<project-root>/bytheslice.config.json`
+- An existing target is never overwritten: the script exits 2 with a `destructive_operation` question (*"Overwrite, merge, or cancel?"*). Re-run with `--overwrite` or `--merge` (existing keys kept, the answers laid over them) per the operator's answer, or stop on cancel.
 
 Print the resolved values back to the user before continuing to Step 3.
 
@@ -293,7 +308,7 @@ Apps that haven't run `/bytheslice:final-quality-check` lack the gates that `/by
 
 Check the working directory (Flow C) or the newly-scaffolded project root (Flow B) for these markers:
 
-First read `quality.tier` from `bytheslice.config.json` (default `standard`; `auto` resolves as [`/final-quality-check` "Quality tier"](../final-quality-check/SKILL.md) documents: `lean` for at most 3 feature pies and no payments work, otherwise `standard`, and `standard` when no master checklist exists yet). The `ci-cd-detector` agent does this and returns the resolved tier.
+First read `quality.tier` from `bytheslice.config.json` (default `standard`; `auto` resolves as [`/final-quality-check` "Quality tier"](../final-quality-check/SKILL.md) documents: `lean` for at most 3 feature pies and no payments work, otherwise `standard`, and `standard` when no master checklist exists yet). `node scripts/detect-ci.js --root <project root>` does this and checks every marker below; it returns `ci_cd_ready`, `quality_tier` (with `quality_tier_reason`), `design_system_present`, the per-marker `markers` detail (including `legacy_full_chain` for an old full-chain hook `/final-quality-check` can swap) and `missing`. It only detects, never scaffolds.
 
 | Marker | `standard`: what "present" looks like | `lean`: what "present" looks like |
 |---|---|---|
@@ -385,7 +400,7 @@ For Flow C:
 
 - **Flow.** `/pizza-party` picks it: Flow B from the parent folder for a new app (the scaffolder creates `<project-name>/`), Flow C inside an existing app.
 - **Step 1 questions** come from the ticket's **Answers**: Q-bootstrap-name is the app folder's name, Q-bootstrap-stack the **Stack** line (Next.js when it names none), Q-bootstrap-variant single-app unless the ticket says monorepo, Q-bootstrap-roadmap No.
-- **Step 2.** Skip Group 1 and Group 2, Q-gates included. Write `bytheslice.config.json` from the run config file `/pizza-party` passed, merged over the recommended Group 2 defaults (the run config's keys win), always with `gates.enforcement: "fix"`. An existing `bytheslice.config.json` is merged the same way, never asked about.
+- **Step 2.** Skip Group 1 and Group 2, Q-gates included. Write `bytheslice.config.json` from the run config file `/pizza-party` passed, merged over the recommended Group 2 defaults (the run config's keys win), always with `gates.enforcement: "fix"`: `node scripts/write-config.js --flow <B|C> --project-root <root> --answers <run config> --merge` (the recommended Group 2 answers are the template's own defaults, so the run config is the only answers file; its sections pass through as given). An existing `bytheslice.config.json` is merged the same way (`--merge`), never asked about.
 - **Step 3.** Skip Q-ci-cd-baseline: `/pizza-party` runs `/final-quality-check` itself in its Phase 5. Report `ci_cd_ready` only.
 - **Step 4** runs as usual (intake, then doctor).
 - Record each of these in the ticket's **Decisions made without you** and return without the next-step pointer's questions.
@@ -412,7 +427,7 @@ hitl_context: "Detected existing package.json at the working directory; user exp
 
 - **One umbrella for setup.** Don't fork the Bootstrap-only or Config-only behavior into separate skills; flow detection picks the right path.
 - **Never write `~/.bytheslice/defaults.json` without explicit consent** (Flow A's Q-Flow-A question gates this).
-- **Never overwrite an existing `bytheslice.config.json`** in a project root without surfacing it to the user first. If detected, ask: *"This project already has bytheslice.config.json. Overwrite, merge, or cancel?"* Under `run.unattended` it is merged instead, never asked (see Unattended runs).
+- **Never overwrite an existing `bytheslice.config.json`** in a project root without surfacing it to the user first. `write-config.js` refuses on its own (exit 2) and asks: *"This project already has bytheslice.config.json. Overwrite, merge, or cancel?"* Under `run.unattended` it is merged instead (`--merge`), never asked (see Unattended runs).
 - **Never delete anything.** Setup is additive.
 
 ---
