@@ -1,0 +1,7 @@
+name: Design system compliance
+on: [pull_request]
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bash scripts/check-design-system-tokens.sh

@@ -19,11 +19,19 @@ const LEGACY_ROLES = Object.freeze({
   'db-schema-stage-writer': 'phased-plan-writer',
   'modern-ux-expert': 'ux-layout-designer', 'layout-architect': 'ux-layout-designer',
   'block-composer': 'ui-builder', 'component-crafter': 'ui-builder',
+  'e2e-installer': 'scaffold-writer', 'workflow-writer': 'scaffold-writer', 'husky-installer': 'scaffold-writer',
+  'lint-config-writer': 'scaffold-writer', 'branch-protection-writer': 'scaffold-writer', 'framework-detector': 'scaffold-discovery',
 });
+// The /final-quality-check local gates run as a Bash script, not an agent: hooks/kitchen-log.sh writes their
+// PreToolUse and PostToolUse rows under this agent name (aid = the tool_use_id), drawn as the oven tender.
+const GATES_AGENT = 'run-gates';
+const SCRIPT_ROLES = Object.freeze({ [GATES_AGENT]: 'oven-tender' });
 // An agent type without its plugin prefix (`bytheslice:discovery` reads `discovery`).
 const bareType = type => { const name = String(type || ''); return name.slice(name.lastIndexOf(':') + 1); };
-// The role an agent type counts as: the bare name, a retired one read as the agent that replaced it.
-const roleOfType = type => { const bare = bareType(type); return LEGACY_ROLES[bare] || bare; };
+// The role an agent type counts as: the bare name, a retired one read as the agent that replaced it,
+// a script row as the scene role that tends it.
+const roleOfType = type => { const bare = bareType(type); return LEGACY_ROLES[bare] || SCRIPT_ROLES[bare] || bare; };
+const isGates = row => bareType(row.agent) === GATES_AGENT;
 // The agents whose start opens the kitchen (work on the line begins). Retired names stay listed so
 // an old activity log reads as it did; their replacements are listed beside them.
 const OPENERS = new Set(['implementer', 'fix-attempter', 'slice-tester', 'slice-verifier', 'block-composer',
@@ -49,6 +57,8 @@ function sanitizeRow(value) {
   } else if (value.ev === 'PreToolUse' || value.ev === 'PostToolUse') {
     if (value.ev === 'PreToolUse' && text(value.skill)) copyText('skill', 120);
     else { copyText('agent'); copyText('label', 120); }
+    // A gates row carries its tool_use_id on the start row too.
+    if (value.ev === 'PreToolUse' && isGates(value)) copyText('aid');
     if (value.ev === 'PostToolUse') {
       copyText('aid');
       for (const key of ['tok', 'ms']) if (integer(value[key])) row[key] = value[key];
@@ -296,7 +306,8 @@ function mergeEvidence(value) {
   return { v: 1, pie: value.pie, pr: value.pr, mergedAt: value.mergedAt };
 }
 
-function foldActivity(inputRows, now = Date.now(), { mergedPie = null, activePie = null } = {}) {
+// `gatesDoneAt`: when run-gates last wrote its summary.json (the end of a background gates run), or null.
+function foldActivity(inputRows, now = Date.now(), { mergedPie = null, activePie = null, gatesDoneAt = null } = {}) {
   const rows = inputRows.map(sanitizeRow).filter(Boolean);
   let active = new Map(), dispatches = [], session = null, sessionStartedAt = null, opened = false, lastStop = null;
   let currentPie = activePie;
@@ -320,6 +331,10 @@ function foldActivity(inputRows, now = Date.now(), { mergedPie = null, activePie
     // Only the newest session contributes live actors. History remains in recent and skills.
     if (session !== null && sid !== session) continue;
     if (integer(row.pie) && row.pie > 0) currentPie = row.pie;
+    // The gates script: its start row is the actor's start; a foreground run's end row (ok set) or the
+    // summary.json run-gates writes when it finishes (below) is its end.
+    if (row.ev === 'PreToolUse' && row.aid && isGates(row)) { active.set(row.aid, { ...row }); continue; }
+    if (row.ev === 'PostToolUse' && row.aid && isGates(row)) { if (typeof row.ok === 'boolean') active.delete(row.aid); continue; }
     if (row.ev === 'PreToolUse' && row.agent) dispatches.push({ ...row });
     if (row.ev === 'SubagentStart' && row.aid) {
       const dispatch = dispatches.find(item => item.agent === row.agent && !item.provisionalAid && !item.confirmedAid);
@@ -335,6 +350,8 @@ function foldActivity(inputRows, now = Date.now(), { mergedPie = null, activePie
     if (row.ev === 'SubagentStop' && row.aid) active.delete(row.aid);
     if (row.ev === 'Stop') lastStop = row.t;
   }
+  // A background gates run ends when run-gates writes its summary.json after the run started.
+  if (integer(gatesDoneAt)) for (const [aid, row] of active) if (isGates(row) && row.t <= gatesDoneAt) active.delete(aid);
   // Late rows from a previous session cannot leave a skill running forever either.
   for (const [key, skill] of runningSkills) {
     if (session !== null && key !== session) finishSkill(key, skill.startedAt);
@@ -342,7 +359,7 @@ function foldActivity(inputRows, now = Date.now(), { mergedPie = null, activePie
   const actors = [...active.values()].map(row => {
     const dispatch = dispatches.find(item => item.confirmedAid === row.aid)
       || dispatches.find(item => item.provisionalAid === row.aid && !item.confirmedAid);
-    return { aid: row.aid, type: row.agent || 'unknown', role: roleOfType(row.agent) || 'unknown', label: dispatch?.label || '',
+    return { aid: row.aid, type: row.agent || 'unknown', role: roleOfType(row.agent) || 'unknown', label: dispatch?.label || (isGates(row) ? row.label || '' : ''),
       pie: dispatch?.pie ?? row.pie ?? null, slice: dispatch?.slice ?? row.slice ?? null,
       startedAt: row.t, sid: row.sid || '' };
   });
@@ -360,11 +377,12 @@ function foldActivity(inputRows, now = Date.now(), { mergedPie = null, activePie
 }
 
 // The step an agent is on, from the dispatch label convention (`P5 S5.2 build: ...`) or, without one, from its role.
-// Retired names keep their own entry, so an old activity log reads as it did.
+// Retired names keep their own entry, so an old activity log reads as it did ('local-gates-runner' serves old logs).
+// /final-quality-check Phase 4 runs scripts/run-gates.js as a Bash command; its rows (agent `run-gates`) read as verify.
 const STEPS = ['build', 'test', 'verify', 'fix', 'commit', 'review', 'plan'];
 const STEP_OF_TYPE = { implementer: 'build', 'block-composer': 'build', 'component-crafter': 'build', 'layout-architect': 'build',
   'ui-builder': 'build', 'ux-layout-designer': 'build',
-  'state-illustrator': 'build', plater: 'build', 'slice-tester': 'test', 'slice-verifier': 'verify', 'local-gates-runner': 'verify',
+  'state-illustrator': 'build', plater: 'build', 'slice-tester': 'test', 'slice-verifier': 'verify', 'local-gates-runner': 'verify', [GATES_AGENT]: 'verify',
   'fix-attempter': 'fix', 'debug-instrumenter': 'fix', 'spec-reviewer': 'review', 'quality-reviewer': 'review',
   'code-reviewer': 'review' };
 function stepOf(agent) {
@@ -408,9 +426,9 @@ function progressOf(ledger, checklist) {
   return ledgerSummary.summarize(ledgerSummary.parseRows(ledger), { names: ledgerSummary.namesFromText(checklist) });
 }
 
-function buildSnapshot({ root, checklist = '', markers = {}, rows = [], cursor = 0, port = null, now, mergedPie = null, planTasks = {}, taskSubjects = null, ledger = null }) {
+function buildSnapshot({ root, checklist = '', markers = {}, rows = [], cursor = 0, port = null, now, mergedPie = null, planTasks = {}, taskSubjects = null, ledger = null, gatesDoneAt = null }) {
   const parsed = parseChecklist(checklist);
-  const activity = foldActivity(rows, now, { mergedPie, activePie: parsed.pies.find(pie => pie.status === 'active')?.pie ?? null });
+  const activity = foldActivity(rows, now, { mergedPie, gatesDoneAt, activePie: parsed.pies.find(pie => pie.status === 'active')?.pie ?? null });
   for (const pie of parsed.pies) {
     for (const slice of pie.slices) {
       const working = activity.active.filter(agent => agent.slice === slice.number).sort((a, b) => b.startedAt - a.startedAt);
@@ -523,19 +541,27 @@ function readLedger(root) {
   } catch { return null; }
 }
 
+// When run-gates last wrote its summary.json (the default log folder), as epoch ms, or null. Read-only, metadata only.
+async function readGatesDoneAt(root) {
+  try {
+    const stat = await fs.lstat(path.join(root, '.claude/.bytheslice-state/gates/summary.json'));
+    return stat.isFile() ? Math.floor(stat.mtimeMs) : null;
+  } catch { return null; }
+}
+
 async function readKitchenState(root, { since, port = null, now = Date.now() } = {}) {
   if (since !== undefined && !integer(since)) throw new TypeError('since must be a nonnegative integer');
   root = path.resolve(root);
   const dir = path.join(root, '.claude/.bytheslice-state/kitchen');
   const checklistPath = path.join(root, 'docs/plans/00_master_checklist.md');
-  const [rotation, current, checklist, config, checklistExists, designSystem, workflows, prePush, docs, envCheck, branchProtection, library, mergedPie] = await Promise.all([
+  const [rotation, current, checklist, config, checklistExists, designSystem, workflows, prePush, docs, envCheck, branchProtection, library, mergedPie, gatesDoneAt] = await Promise.all([
     readFileOrEmpty(path.join(dir, 'activity.1.jsonl')), readFileOrEmpty(path.join(dir, 'activity.jsonl')),
     readFileOrEmpty(checklistPath), exists(path.join(root, 'bytheslice.config.json')), exists(checklistPath),
     exists(path.join(root, 'docs/design-system.md')), exists(path.join(root, '.github/workflows')),
     exists(path.join(root, '.husky/pre-push')), fs.readdir(path.join(root, 'docs'), { withFileTypes: true }).catch(() => []),
     exists(path.join(root, '.claude/.bytheslice-state/env-check-passed')),
     exists(path.join(root, 'scripts/setup-branch-protection.sh')), hasLibraryRoute(root),
-    readMergeEvidence(path.join(dir, 'merged-pie.json')),
+    readMergeEvidence(path.join(dir, 'merged-pie.json')), readGatesDoneAt(root),
   ]);
   const previous = parseActivity(rotation), latest = parseActivity(current);
   const markdown = checklist.toString('utf8');
@@ -543,8 +569,8 @@ async function readKitchenState(root, { since, port = null, now = Date.now() } =
   const [planTasks, taskSubjects] = plans.length ? await Promise.all([readPlanTasks(root, plans), readTaskSubjects(root, now)]) : [{}, null];
   return buildSnapshot({ root, checklist: markdown, planTasks, taskSubjects,
     markers: { config, checklist: checklistExists, designSystem, workflows, prePush, envCheck, branchProtection, library, prd: docs.some(entry => entry.isFile() && /^prd-.*\.md$/.test(entry.name)) },
-    rows: [...previous.rows, ...latest.rows], cursor: latest.cursor, port, now, mergedPie, ledger: readLedger(root) });
+    rows: [...previous.rows, ...latest.rows], cursor: latest.cursor, port, now, mergedPie, gatesDoneAt, ledger: readLedger(root) });
 }
 
 module.exports = { shopStatus, mergeEvidence, sanitizeRow, parseActivity, parseChecklist, foldActivity, buildSnapshot, readKitchenState,
-  stepOf, taskProgress, countPlanTasks, LEGACY_ROLES, roleOfType };
+  stepOf, taskProgress, countPlanTasks, LEGACY_ROLES, SCRIPT_ROLES, roleOfType };

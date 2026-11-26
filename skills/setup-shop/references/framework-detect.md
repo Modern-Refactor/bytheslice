@@ -78,7 +78,7 @@ For `/setup-shop` Step 1 Phase 2 (Q-bootstrap-stack):
 | `/set-display-case` Step 6 (library-route-scaffolder) | Route location, page-file extension, theme primitive |
 | `/sell-slice` Phase 4 frontend pipeline (ux-layout-designer, library-entry-writer) | Page-file convention. **Bubble HITL for non-`next-app` stacks until per-framework templates land** (Tier L work) |
 | `/inspect-display` (platform-walker) | Already framework-aware; uses framework-specific route globs |
-| `/final-quality-check` (framework-detector) | Already framework-aware for E2E selection |
+| `/final-quality-check` (scaffold-discovery) | Already framework-aware for E2E selection |
 
 ## How to add a new stack
 

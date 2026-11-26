@@ -10,7 +10,7 @@ Used only when `bytheslice.config.json` sets `run.unattended: true`. The operato
 - **The agent never sees a value.** Every command that emits a secret writes to a pipe or to a temp file that only [`../scripts/merge-env.js`](../scripts/merge-env.js) reads. Never `cat`, `echo`, `grep` without `-q`, `head`, `printenv` or `Read` a file or stream holding a value. `merge-env.js` prints key names only.
 - **Detection is read-only and silent.** Run each check with its output discarded (`>/dev/null 2>&1`) and use only the exit code. A `whoami` style command that prints only the account identity may be shown.
 - **Temp files live outside the repo** (`mktemp` under `$TMPDIR`, mode 600) and are removed by `merge-env.js --consume`, or with `rm -f` on any failure path.
-- **Fill only what is missing.** `merge-env.js` writes a key only when the `.env.example` lists it and the `.env.local` has it missing, empty or placeholder. An operator-set value is never replaced.
+- **Fill only what is missing.** `merge-env.js` writes a key only when the `.env.example` lists it and the `.env.local` has it missing, empty, placeholder or still holding the `.env.example` value (a copy, not an operator-set value). An operator-set value is never replaced.
 - **Public values from an MCP are fine; secrets are not.** An MCP result lands in the agent's context, so take only non-secret values from one (a project URL, a publishable or anon key). A secret key comes only from a CLI piped into `merge-env.js`. With only an MCP and a secret to fill, treat that key as having no authorized provider.
 - **Only what the ticket names.** Link to, read from, or create only the projects, sites and databases the ticket's **Answers** name. Creating anything else on a shared account, and every destructive command (`db reset`, deleting a project, rotating keys), is skipped and recorded.
 
@@ -34,7 +34,7 @@ A provider counts as authorized for a key only when its check passes AND the tic
 
 ## Writing values (examples)
 
-Replace `<...>` with the ticket's project names, and `merge-env.js` with `"${CLAUDE_PLUGIN_ROOT}/skills/open-the-shop/scripts/merge-env.js"`. Each line ends in `merge-env.js`, which reports `written` and `still_missing` key names. Linking writes only local config; it is not a write on the shared account. Check each CLI's current flags before running (they change between versions); the shape stays the same: provider output in, key names out.
+Replace `<...>` with the ticket's project names, and `merge-env.js` with `"${CLAUDE_PLUGIN_ROOT}/skills/open-the-shop/scripts/merge-env.js" --root <workspace root>` (its `--example`, `--target` and `--source` paths then resolve against the workspace root; see the [script contract](../../sell-slice/references/script-contract.md)). Each line ends in `merge-env.js`, which reports `written` and `still_missing` key names. Linking writes only local config; it is not a write on the shared account. Check each CLI's current flags before running (they change between versions); the shape stays the same: provider output in, key names out.
 
 | Provider | How the values reach `.env.local` |
 |---|---|
@@ -56,7 +56,7 @@ For each key still missing after the provider pass:
 
 | The key's service | Under `run.unattended: true` |
 |---|---|
-| **Optional** (the `.env.example` line or the comment above it says optional, or the code guards it, or it is analytics, error tracking or similar the main flow does not need) | Leave it out. Record it under "Decisions made without you" and pass it to `env-verifier` as an excused key. |
+| **Optional** (the `.env.example` line or the comment above it says optional, or the code guards it, or it is analytics, error tracking or similar the main flow does not need) | Leave it out. Record it under "Decisions made without you" and pass it to `env-inventory.js verify --excused` as an excused key. |
 | **Required, with a local substitute** | Use the substitute, write its local, non-secret values with `merge-env.js`, record it. The slices build against the substitute; the ticket line says which service it replaces. |
 | **Required, no local substitute** | The app cannot run without it. Mark every slice that needs it deferred in the master checklist (row stays `[ ]`, `**Status:** deferred: needs <service> credentials`), record the blocker under **Deferred**, excuse its keys, and return `status: complete_with_deferrals`. |
 
@@ -75,7 +75,7 @@ A generated local secret (a session signing key, for example) is created by a co
 
 ## GitHub Actions secrets
 
-Set only secrets a workflow under `.github/workflows/` references (`github-secrets-scanner` lists them). Under ship-once only the app's final PR runs CI, so set them any time before that PR. Pipe each value from the same provider tooling, never through the agent:
+Set only secrets a workflow under `.github/workflows/` references (`env-inventory.js secrets` lists them). Under ship-once only the app's final PR runs CI, so set them any time before that PR. Pipe each value from the same provider tooling, never through the agent:
 
 ```bash
 T=$(mktemp); vercel env pull "$T" --environment=development --yes >/dev/null

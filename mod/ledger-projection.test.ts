@@ -5,7 +5,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { parseChecklist } from './checklist.ts'
 import { CHECKLIST_FIXTURE } from './fixtures/checklist.fixture.ts'
-import { dedupeActivity, findSlice, liveAgents, parseActivity, projectLedger, rollup, STALE_MS, statusOf, stepOf, verifyStartOf } from './ledger-projection.ts'
+import { dedupeActivity, findSlice, isScriptStep, liveAgents, parseActivity, projectLedger, rollup, STALE_MS, statusOf, stepOf, verifyStartOf } from './ledger-projection.ts'
 import { ACTIVITY, ROTATED, activityLine, stage, status } from './testing.tsx'
 import type { ActivityRow, LedgerRow } from './types'
 
@@ -131,6 +131,28 @@ test('a rollup totals agents by role, tokens, time and fix loops, and survives r
   const view = findSlice(projectLedger(rows, [], C, 10), '5.2')
   expect(view?.fixLoop).toBe(1)
   expect(view?.tokens).toBe(1000)
+})
+
+test('the run-gates script rows are a script step: never a live agent, a rollup role, tokens or a slice signal', () => {
+  const gates = (t: number, ev: 'PreToolUse' | 'PostToolUse' | 'SubagentStart', extra: Partial<ActivityRow> = {}): ActivityRow => ({
+    t,
+    sid: 's',
+    ev,
+    agent: 'bytheslice:run-gates',
+    aid: 'toolu_gates',
+    label: 'final-quality-check local gates',
+    pie: 5,
+    slice: '5.2',
+    ...extra,
+  })
+  // A row shaped like an agent start or one carrying tok/ms still never counts as an agent.
+  const acts: ActivityRow[] = [gates(1, 'PreToolUse'), gates(2, 'SubagentStart'), gates(3, 'PostToolUse', { ok: true, tok: 50, ms: 9000 }), start(4, 'implementer', 'i1')]
+  expect(isScriptStep(gates(1, 'PreToolUse'))).toBe(true)
+  expect(isScriptStep(start(4, 'implementer', 'i1'))).toBe(false)
+  expect(Object.keys(rollup(acts, '5.2').agents)).toEqual(['implementer'])
+  expect(rollup(acts, '5.2')).toMatchObject({ tokens: 0, ms: 0 })
+  expect(liveAgents(acts, 5).map(agent => agent.role)).toEqual(['implementer'])
+  expect(findSlice(projectLedger([], [gates(1, 'SubagentStart')], C, 10), '5.2')?.status).toBe('queued')
 })
 
 test('duplicate activity rows count once, by time and agent id', () => {

@@ -144,7 +144,7 @@ Static gates run in four tiers, each at the cheapest point that catches its clas
 - **The conductor commits a task only on a green tier 2.** A red tier 2 goes back to the builder; it never lands in a commit. Bypassing the `pre-push` hook with `--no-verify` is never the answer: a red hook is fixed, not skipped.
 - **Tier 3 runs once per slice.** Tier 1 and 2 results are narrower in scope and never substitute for it. After a fix, `slice-verifier` re-runs only the gates that fix could change (Phase 5.4); the full suite never runs again for that slice.
 - **Tier 4 belongs to CI.** Exit criteria and checklist rows never demand a CI-only check (`@regression-core`, `@visual`, audit, `db-schema-drift`, the design-system-compliance workflow) per slice; those gate the PR.
-- `final-quality-check`'s `local-gates-runner` is a one-time scaffold validation outside this ladder and is unchanged.
+- `final-quality-check`'s Phase 4 local gates (`scripts/run-gates.js`) are a one-time scaffold validation outside this ladder and are unchanged.
 
 ---
 

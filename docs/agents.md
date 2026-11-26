@@ -2,15 +2,14 @@
 
 # 🍕 Agent Roster
 
-Every ByTheSlice subagent in one table, in plain English. ByTheSlice ships 42 subagents, and every one is a registered plugin agent: type `@bytheslice:<name>` in any Claude Code session to aim one at something directly, or just run the skills and let them dispatch. Registration means each agent's model tier, effort level, and tool allowlist (when its file declares one; an agent without a `tools:` list gets every tool) are enforced by the platform, not just suggested.
+Every ByTheSlice subagent in one table, in plain English. ByTheSlice ships 28 subagents, and every one is a registered plugin agent: type `@bytheslice:<name>` in any Claude Code session to aim one at something directly, or just run the skills and let them dispatch. Registration means each agent's model tier, effort level, and tool allowlist (when its file declares one; an agent without a `tools:` list gets every tool) are enforced by the platform, not just suggested.
 
 Bold rows mark the skill each group of agents belongs to.
 
 | Agent | Kitchen character | What it does |
 |---|---|---|
 | **🍕 /setup-shop** | | |
-| `ci-cd-detector` | Dot | Peeks at the repo to see whether the standard CI safety nets (test workflows, pre-push hook, PR template) already exist, and lists whatever is missing. A lean app needs a smaller set, and the design-system check only when the app has a design system. |
-| `config-generator` | Cora | Turns your setup answers into the `bytheslice.config.json` settings file, so later commands know your preferences without asking again. |
+| scripts, no agents | | `scripts/detect-ci.js` checks whether the standard CI safety nets (test workflows, pre-push hook, PR template) exist and lists what is missing, with a lean app needing a smaller set. `scripts/write-config.js` turns your setup answers into the `bytheslice.config.json` settings file and never overwrites one without asking. |
 | **🍕 /create-menu** | | |
 | `brief-analyzer` | Bree | Reads your project brief and spots what is vague or missing, then proposes a short list of questions to ask you before the PRD gets written. |
 | `prd-reviewer` | Prue | Final quality check on the finished PRD: compares it against your original materials and returns pass or revise. |
@@ -20,25 +19,16 @@ Bold rows mark the skill each group of agents belongs to.
 | `phased-plan-writer` | Phil | Writes the detailed plan file for one feature slice. Many copies run in parallel, one per slice, and it also handles new slices added later by /special-order. Its `db-schema` mode writes the plan for the database-schema slice, adapted to your database tooling (Supabase, Prisma, Drizzle), and only runs if your project has a database. A frontend or full-stack slice that owns a user-flow step gets exactly one user-outcome Exit line, which `slice-tester` checks end to end. |
 | `master-checklist-synthesizer` | Max | Collects what every plan writer produced and assembles the single master checklist that drives all future work, including each pie's short User flow list. Pure bookkeeping, no creative decisions. |
 | **🍕 /set-display-case** | | |
-| `bundle-validator` | Val | Checks a design bundle exported from claude.ai/design: right folder shape, all design tokens present, nothing missing. Reports specific gaps. |
-| `compliance-pre-check` | Coco | The design-system gatekeeper: refuses to call the design system done until every required token category (colors, spacing, type, and so on) is filled in. |
+| scripts, no agents | | `scripts/token-check.js` checks a design bundle exported from claude.ai/design (`bundle`) and is the design-system gatekeeper that refuses to call the system done until every required token category is filled in (`complete`). It reads Tailwind v4 `@theme` blocks and can check the approved draft before any file exists. |
 | `library-route-scaffolder` | Lars | Builds the hidden `/library` page, an in-app showroom where every UI component is previewed before it ships, and keeps it out of your site's navigation and search. |
 | `token-expander` | Tia | If you have no design bundle, this turns a written brand description into a full set of design tokens and shows you the values for approval before writing files. |
 | **🍕 /final-quality-check** | | |
-| `scaffold-discovery` | Sky | Fingerprints the repo first: package manager, framework, monorepo or not, existing CI workflows, database presence. Everyone downstream reads its report. |
-| `framework-detector` | Fred | Decides which end-to-end testing setup fits (usually Playwright), and which apps in a monorepo need their own test config. |
-| `e2e-installer` | Ed | Installs the end-to-end test framework, adds the standard test scripts, and writes the first starter tests so the suite is never empty. |
-| `workflow-writer` | Wren | Writes the GitHub Actions workflow files (CI, E2E, design-system compliance, and schema drift when you have a database), skipping any that already exist. |
-| `lint-config-writer` | Linda | Adds the lint rules that catch hardcoded colors and spacing (anything that bypasses your design tokens), and tidies `.gitignore` for test artifacts. |
+| `scaffold-discovery` | Sky | Fingerprints the repo first: package manager, framework, monorepo or not, existing CI workflows, database presence, and which end-to-end testing setup fits (usually Playwright). Everyone downstream reads its report. |
+| `scaffold-writer` | Wren | Fits out the repo one block at a time, dispatched once per block so each gets its own review: `e2e` (end-to-end framework, standard scripts, starter tests), `workflows` (GitHub Actions for CI, E2E, design-system compliance and schema drift), `husky` (the pre-push hook), `lint` (rules that catch hardcoded colors and spacing, `.gitignore` tidy-up), `branch-protection` (a one-time script that locks main). Skips what already exists and never overwrites an existing rule. |
+| *(script)* | Ollie | `scripts/run-gates.js` runs the entire gate suite locally (lint, types, tests, E2E, visual) in the background before the first push and reports a short summary, with full logs on disk. No agent. |
 | `a11y-discovery-runner` | Ally | Runs a scoped shadscan accessibility scan to surface issues no other gate catches, throws out anything pointing at your `/library` mockups, and hands back the rest as leads to check by hand. It never blocks, never scores you, and never fixes anything. |
-| `husky-installer` | Hux | Sets up the git pre-push hook so the quick slice checks (lint, types, unit tests, build) run on your machine before code can leave it; CI still runs the full suite on every PR. |
-| `branch-protection-writer` | Locke | Generates a one-time script you run to lock the main branch on GitHub so nothing merges without green checks. |
-| `local-gates-runner` | Ollie | Runs the entire gate suite locally (lint, types, tests, E2E, visual) before the first push, so problems get fixed on the branch instead of in a red PR. |
 | **🍕 /open-the-shop** | | |
-| `env-scanner` | Enzo | Finds every `.env.example` in the repo and lists all the keys your project expects, without ever reading actual secret values. |
-| `checklist-generator` | Chet | Turns the key list into a human checklist grouped by service (Supabase, Stripe, Resend, and friends) with direct links to where each credential is created. |
-| `env-verifier` | Vera | Confirms your `.env.local` files actually have every required key filled with real, non-placeholder values. Never reads or logs the values themselves. |
-| `github-secrets-scanner` | Gus | Scans the CI workflows for the secrets they reference, so you know exactly which keys must also be added in GitHub's repository settings. |
+| scripts, no agents | | `scripts/env-inventory.js` finds every `.env.example` and lists the keys your project expects (`scan`), lists the secrets your CI workflows reference (`secrets`), renders the manual checklist grouped by service with provisioning links (`checklist`), and confirms your `.env.local` files hold real, non-placeholder values (`verify`). It never prints a secret value. |
 | **🍕 /sell-slice** | | |
 | `code-explorer` | Pip | Thorough, read-only exploration in three modes. `stage-recon` maps which files, symbols, and callers the slice will touch, so the build plan is grounded in the real codebase. `slice-scope` picks the next slice off the master checklist, defines pass/fail acceptance tests for it, and proposes the exact checklist update (suggests, never edits); it runs in the same dispatch as stage-recon. `feature-trace` (/special-order) returns the 5 to 10 key files, entry points, conventions and risks for a requested feature before the questions start. |
 | `rules-loader` | Bea | Loads the project rules file and `bytheslice.config.json`, and hands back the resolved settings the rest of the pipeline should obey. |
@@ -73,6 +63,7 @@ The [kitchen roster](../skills/dashboard/kitchen.html) groups characters into Op
 - **Dom** is `implementer#2`, the second simultaneous instance of the registered `implementer` role. Ren is the first instance. Dom does not increase the unique registered-agent count.
 - **Ezra** is the `expediter` scene role who pins and splits tickets in the demo kitchen. It is not a registered plugin agent: its live work (picking the next slice) belongs to `code-explorer`, which is Pip.
 - **Paz** is the `review-scribe` scene role at the close-shop review board. It is not a registered plugin agent: the plugin no longer ships a proposal drafter.
+- **Ollie** is the `oven-tender` scene role who tends the oven. It is not a registered plugin agent: the full local gates are `scripts/run-gates.js` now.
 - **Pia** is the `plater` scene helper that collects slices and plates pies. It is not a registered plugin agent.
 - **Base crew and town crew.** While a pie is open in live mode, Dom works the line, Ollie tends the oven and Sal minds the window on ambient duty, with Chef Nico leading; an agent that is actually running wears a gold work tag. The rest of the named crew live in town, in flats above the Main Street shops, until their agent starts, then run in to their station and walk back out when it finishes. The People sheet's Crew and Town tabs open a profile card for any of them.
 - Additional simultaneous plugin instances use numbered helpers in the matching division, such as `line helper 1`. Unknown plugin roles use line helpers. Non-plugin agents appear as numbered **Temp** helpers at the pass, preserving their actual agent type in the role description.

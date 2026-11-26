@@ -79,8 +79,8 @@ function installPluginMode({ repoRoot, args, targets, pluginMetadata }) {
 function installSkillsMode({ repoRoot, args, targets }) {
   const skillIndex = buildSkillIndex(repoRoot);
   const requestedSkills = resolveRequestedSkills(args.skills, skillIndex);
-  // A dependency is copied for the agents the requested skills dispatch from it;
-  // only the requested skills get command shims.
+  // A dependency is copied for the files (agents, references, scripts) the requested
+  // skills link inside it; only the requested skills get command shims.
   const { skills: selectedSkills, added } = resolveSkillDependencies(repoRoot, requestedSkills, skillIndex);
   const commandPaths = resolveCommandsForSkills(repoRoot, requestedSkills);
 
@@ -117,7 +117,7 @@ function printSkillsSummary({ destination, selectedSkills, added, commandPaths, 
   console.log(`  - destination: ${destination}`);
   console.log(`  - skills: ${selectedSkills.map(bare).join(", ")}`);
   for (const dependency of added) {
-    console.log(`  - added ${bare(dependency.skill)}: ${dependency.neededBy.map(bare).join(", ")} dispatches its agents`);
+    console.log(`  - added ${bare(dependency.skill)}: ${dependency.neededBy.map(bare).join(", ")} links its files`);
   }
   console.log(`  - command shims: ${commandPaths.length}`);
   printReportStats(report);

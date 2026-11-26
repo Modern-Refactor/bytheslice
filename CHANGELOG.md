@@ -16,6 +16,71 @@ All notable changes to **🍕 ByTheSlice** are tracked here, slice by slice. The
 
 ---
 
+## [7.1.0] - 2026-11-25
+
+**The agent roster drops from 42 to 28.** Fifteen mechanical agents become five zero-dependency scripts, five installers become one `scaffold-writer`, and `framework-detector` folds into `scaffold-discovery`. The work is unchanged and costs no model tokens where a script does it; old names still resolve through the alias table.
+
+### Changed
+
+- **Fifteen agents leave the roster.** The 42 registered subagents become 28 (`.claude-plugin/plugin.json`, `DEFAULT_ROLES` in `mod/policy.ts`, `skills/setup-shop/references/model-tier-guide.md`, `docs/agents.md`, the kitchen cast and every manifest description follow). A script replaces each mechanical agent; the five scaffold installers become one agent dispatched once per block.
+
+| Old agent | Now | Mode or input |
+|---|---|---|
+| `env-scanner` | `skills/open-the-shop/scripts/env-inventory.js` | `scan` |
+| `github-secrets-scanner` | `env-inventory.js` | `secrets` |
+| `checklist-generator` | `env-inventory.js` | `checklist` |
+| `env-verifier` | `env-inventory.js` | `verify` |
+| `bundle-validator` | `skills/set-display-case/scripts/token-check.js` | `bundle` |
+| `compliance-pre-check` | `token-check.js` | `complete` |
+| `config-generator` | `skills/setup-shop/scripts/write-config.js` | answers file |
+| `ci-cd-detector` | `skills/setup-shop/scripts/detect-ci.js` | project root; keeps the lean-tier rule |
+| `local-gates-runner` | `skills/final-quality-check/scripts/run-gates.js` | project root |
+| `e2e-installer` | `scaffold-writer` (sonnet) | `block: e2e` |
+| `workflow-writer` | `scaffold-writer` | `block: workflows` |
+| `husky-installer` | `scaffold-writer` | `block: husky` |
+| `lint-config-writer` | `scaffold-writer` | `block: lint` |
+| `branch-protection-writer` | `scaffold-writer` | `block: branch-protection` |
+| `framework-detector` | `scaffold-discovery` (opus) | its `e2e_plan` |
+
+- **Scripts print one JSON object, under one contract.** [`skills/sell-slice/references/script-contract.md`](skills/sell-slice/references/script-contract.md) is the single reference: stdout is one JSON object; exit 0 means the script ran (a failed verdict, such as a failed gate, is in the JSON); exit 2 is `{"needs_human": {"category", "question", "context"}}`, which the conductor raises with `bts_hitl` and stops on (unattended runs follow their skill's defer rule); exit 1 is a real error, a usage error included. All five scripts share that `needs_human` shape (`run-gates.js` printed `hitl_category`, `hitl_question` and `hitl_context` before), extra facts such as `missing_scripts` sit beside it, and the four skills that run a script link the contract. The env scripts print key names and paths only, never a value; `write-config.js` keeps the no-overwrite HITL exit and the JSONC comments.
+- **`run-gates.js` exits 0 when a gate fails.** The summary says `overall: fail`; exit 1 now always means the script itself broke, and a usage error exits 1 instead of 64.
+- **One invocation form for every skill script.** Each SKILL.md runs `node "<this-skill-directory>/scripts/<name>.js" ... --root <project-root>` (`--cwd` for `run-gates.js`, `--project-root` for `write-config.js`; each script accepts both spellings), never "cd into the skill folder". Every script resolves a relative path argument against the project root, wherever it is run from; `merge-env.js` and `token-check.js` gained the flag.
+- **`run-gates.js` runs in the background.** The `/final-quality-check` conductor starts it in the background; it writes every gate's full log to a file on disk, prints only a JSON summary, and still generates the first visual baselines when none exist.
+- **`scaffold-writer` runs once per sub-block.** `/final-quality-check` dispatches it for 3A (`e2e`), 3B (`workflows`), 3C (`husky`), 3E (`lint`) and 3G (`branch-protection`) separately, so each sub-block keeps its own `code-reviewer` pass and its own commit. Its frontmatter effort is medium; dispatch the husky, lint and branch-protection blocks at low where the host takes a per-dispatch effort. The husky three-way classification of an existing hook and the lint rule that preserves every existing ESLint rule are hard rules.
+- **The kitchen follows.** Ollie is a scene role now (`oven-tender`, like Ezra and Paz), `scaffold-writer` is Wren, the Opening crew is gone, and a retired name in an old activity log still draws the new character through the legacy map. `/final-quality-check` Phase 4 still shows as verifying: the Pass relays a Bash call that runs `run-gates.js` to `hooks/kitchen-log.sh`, which writes a start and an end row under `bytheslice:run-gates` (never the command), and the kitchen draws Ollie on the verify step until the run ends (a background run ends when `run-gates.js` writes its `summary.json`, which it now does for a `needs_human` result too).
+- **`run-gates.js` takes per-app baselines.** Under a per-app E2E plan the root `tests/visual/baselines` stays empty, so every run regenerated and never compared. `--baselines-dir` (repeatable or comma-separated, from `scaffold-discovery`'s `e2e_plan`) names each app's folder, the first baselines are written only when every named folder is empty (a folder that already has baselines is never rewritten; the empty ones are listed in `empty_baselines_dirs`), and `/final-quality-check` Phase 4 passes the folders for a per-app plan.
+
+### Added
+
+- **Tailwind v4 `@theme` support in `token-check.js`.** Tokens declared in a `@theme` block count toward the completeness checklist beside `:root` custom properties and `tailwind.config`.
+- **A draft check before files exist.** `token-check.js complete` can run against the approved token draft, so a gap shows up before any token file is written.
+- **`--skip-e2e` and `--gate-timeout-ms` for `run-gates.js`.** Skip the e2e gates for a quick pass, or cap each gate's run time.
+- **The standard tier runs more gates.** `run-gates.js` under the standard tier now also runs `test:integration` and `build` when the project defines them.
+
+### Fixed
+
+- **`env-inventory.js verify` catches fake credentials.** Beyond the literal list it now flags `your_` and `your-` words (`your_api_key_here`, `YOUR_SUPABASE_URL`, `https://your-project.supabase.co`), a trailing `_here`, a trailing `...` (`sk_test_...`), any `<...>` or `{{...}}` in the value, `replace_me` spelled any way, and the words example, placeholder, dummy and changeme (with trailing digits, so `changeme123`) when they stand alone: the whole value, or a value whose other parts are only digits, key prefixes or credential nouns (`sk_test_example`, `dummy-token`). The same word inside a longer identifier (`my-example-app`, `re_example_real123`) or a long random token is not flagged. `merge-env.js` uses the same rule.
+- **A value left at its `.env.example` value is a question, not a failure.** `verify` lists those keys under `unchanged_from_example` (a localhost URL, a number or a boolean excepted) without failing `status`, so legitimate defaults such as `us-east-1`, `development`, `info`, a company name, `redis://localhost:6379` or a local Postgres URL pass. `--confirmed K1,K2` records the operator's yes and takes the keys off the list. `/open-the-shop` Phase 5 asks once ("These keys still hold the .env.example value: K1, K2. Intentional?"); unattended runs confirm them with a note. `merge-env.js` still fills such a slot from provider output and accepts a provider value equal to the example.
+- **Inline comments after quoted values.** `SECRET="" # fill this in` now reads as empty and `SECRET="TODO" # set it` as a placeholder; the quoted value ends at its closing quote.
+- **`write-config.js` keeps an object `flow` section.** Only a string `flow` is the A/B/C selector, so `/pizza-party`'s `"flow": { "libraryGate": "off" }` reaches the project config.
+- **`verify` never passes an empty project.** With no `.env.example` anywhere under the root it returns `status: fail` with `no_env_examples_found: true` instead of a vacuous pass.
+- **A commented-out secret in `.env.example` no longer leaks.** A comment line shaped like `KEY=value` (with `export`, quotes or spaces) or one that holds a credential-shaped value is never kept as a key's docstring, so `scan` and `checklist` (shown verbatim in `/open-the-shop` Phase 3) never print it.
+- **`write-config.js` keeps a backup.** A merge or overwrite re-renders the file from the example template, so the operator's hand-written comments were dropped silently. It now copies the original first to a timestamped `bytheslice.config.json.<stamp>.bak` under the gitignored `.claude/.bytheslice-state/backups/` (the folder carries its own `.gitignore`, so a project without `.claude/` in its `.gitignore` never commits it), or beside `~/.bytheslice/defaults.json` for Flow A, never into the project root. It says so in `notes` and `backup_path`, a second merge never replaces an earlier backup, and the existing-file question says comments are not carried over.
+- **`detect-ci.js` finds every PR template GitHub reads.** The template is matched in any letter case in `.github/`, the repo root and `docs/`, and as a `PULL_REQUEST_TEMPLATE/` folder; `ci.yaml` counts as `ci.yml`. When there is no `ci.yml` but other workflows exist, `markers.ci_yml.other_workflows` and a note list each one with whether it runs lint, typecheck or test jobs, so the conductor asks before adding a second CI file.
+- **Visual baselines regenerate through any package manager and turbo.** `--update-snapshots` goes after `--`, which npm, pnpm, bun and Yarn 1 drop before handing the rest to the script (Yarn 2+ gets the flag with no `--`), and a script that runs a turbo pipeline gets a second `--` so turbo passes the flag to each task.
+- **`merge-env.js` exits 1 on a usage error**, not 2, so exit 2 always means `needs_human`.
+- **A skills-only install brings every file a SKILL.md links in another skill.** The installer followed only `../<skill>/agents/` links, so installing `open-the-shop`, `final-quality-check`, `set-display-case` or `setup-shop` alone left their link to `sell-slice/references/script-contract.md` dead. Any SKILL.md link to an existing file inside another skill (`agents/`, `references/`, `scripts/`) is now a dependency, followed transitively; a link to a peer skill's own `SKILL.md` is not. `set-display-case` no longer links the config schema through a path that missed the skills folder.
+- **The gates script is never counted as an agent.** The kitchen rows `hooks/kitchen-log.sh` writes under `bytheslice:run-gates` are a script step: `mod/ledger-projection.ts` now leaves them out of live agents, slice rollups (so the `slice.rollup` ledger rows and the PR evidence built from them) and slice signals, while the kitchen still draws the verify step from them.
+- **`ci.yml` no longer lints with a config file that may not exist.** The scaffold templates called `eslint --config .eslintrc.design-system.json`, a file that `extends ./.eslintrc.json`, which a flat-config project does not have. The lint block merges the design-system rules into the project's existing ESLint config, and the `ci.yml` and `design-system-compliance.yml` ESLint steps now run the project's normal `lint` script, which carries them. The templates file's `.eslintrc.design-system.json` section is now "ESLint design-system rules", merged into the existing config.
+
+### Migrating from 7.0.0
+
+- **Nothing to edit.** Old stage files, checklists, goals, ledgers and `bytheslice.config.json` files keep working: the alias table in `skills/sell-slice/references/legacy-agent-names.md` resolves every retired name to its new agent and block, or to the script that replaced it, and a `modelTiers` key such as `e2eInstaller` reaches `scaffold-writer` (it may only raise the tier).
+- **Restart in-flight chats after upgrading.** Claude Code reloads plugin agents on restart, so a chat started before the upgrade still holds the old roster.
+- **Old ledger and activity rows keep their names.** Rows written under a retired name still project; the session-start pointer line also fires for the new retired names.
+
+---
+
 ## [7.0.0] - 2026-11-25
 
 **The agent roster drops from 52 to 42.** Sixteen agents merge into six or go away, the three feature-dev ideas land as modes of agents that already exist, and every project planned or started on 6.x keeps working: old names resolve to the new agents through a legacy alias layer in the Pass.

@@ -194,3 +194,43 @@ test('an actor started under a retired agent name carries its new role; old name
   assert.equal(roleOfType('other:layout-architect'), 'ux-layout-designer');
   assert.equal(roleOfType('bytheslice:implementer'), 'implementer');
 });
+
+// The /final-quality-check gates run as a Bash script; hooks/kitchen-log.sh writes their rows under `run-gates`.
+const gatesRow = (t, ev, aid, extra = {}) => ({ ...base, t, ev, agent: 'bytheslice:run-gates', aid, label: 'final-quality-check local gates', ...extra });
+
+test('a gates Bash call is a verifying actor drawn as the oven tender, from its start row to its end row', () => {
+  assert.deepEqual(sanitizeRow(gatesRow(1100, 'PreToolUse', 'toolu_1')), gatesRow(1100, 'PreToolUse', 'toolu_1'), 'the start row keeps its tool_use_id');
+  const start = [{ ...base, ev: 'SessionStart' }, gatesRow(1100, 'PreToolUse', 'toolu_1', { pie: 1, slice: '1.4' })];
+  const state = foldActivity(start, 1200);
+  assert.equal(state.active.length, 1);
+  const actor = state.active[0];
+  assert.deepEqual([actor.aid, actor.type, actor.role, actor.label, actor.slice], ['toolu_1', 'bytheslice:run-gates', 'oven-tender', 'final-quality-check local gates', '1.4']);
+  assert.equal(stepOf(actor), 'verify');
+  assert.equal(state.phase, 'dawn', 'the prep gates do not open the line');
+  // A foreground run ends on its PostToolUse row; a background run's PostToolUse (no ok) keeps it going.
+  assert.deepEqual(foldActivity([...start, gatesRow(1150, 'PostToolUse', 'toolu_1', { ok: true })], 1200).active, []);
+  assert.equal(foldActivity([...start, gatesRow(1150, 'PostToolUse', 'toolu_1')], 1200).active.length, 1);
+});
+
+test('a background gates run ends when run-gates writes summary.json after it started', () => {
+  const rows = [{ ...base, ev: 'SessionStart' }, gatesRow(1100, 'PreToolUse', 'toolu_bg'), gatesRow(1101, 'PostToolUse', 'toolu_bg')];
+  assert.equal(foldActivity(rows, 2000, { gatesDoneAt: 1000 }).active.length, 1, 'a summary from an earlier run does not end this one');
+  assert.deepEqual(foldActivity(rows, 2000, { gatesDoneAt: 1900 }).active, []);
+  assert.equal(foldActivity([...rows, { ...base, t: 1200, ev: 'SubagentStart', agent: 'bytheslice:implementer', aid: 'cook' }], 2000, { gatesDoneAt: 1900 }).active.length, 1, 'only the gates actor ends');
+});
+
+test('the reader ends a background gates run from the summary.json time', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kitchen-gates-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const dir = path.join(root, '.claude/.bytheslice-state/kitchen');
+  await fs.mkdir(dir, { recursive: true });
+  const started = Date.now() - 60000;
+  const rows = [{ t: started - 10, sid: 's', ev: 'SessionStart' }, { ...gatesRow(started, 'PreToolUse', 'toolu_r'), sid: 's' }];
+  await fs.writeFile(path.join(dir, 'activity.jsonl'), rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+  const running = await readKitchenState(root);
+  assert.deepEqual(running.active.map(a => [a.role, stepOf(a)]), [['oven-tender', 'verify']]);
+  const gates = path.join(root, '.claude/.bytheslice-state/gates');
+  await fs.mkdir(gates, { recursive: true });
+  await fs.writeFile(path.join(gates, 'summary.json'), '{"overall":"pass"}\n');
+  assert.deepEqual((await readKitchenState(root)).active, []);
+});

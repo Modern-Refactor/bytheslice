@@ -7,7 +7,7 @@
   // Aliases: "haiku" | "sonnet" | "opus".
   "modelTiers": {
     // "implementer": "opus",
-    // "qualityReviewer": "opus",
+    // "codeReviewer": "opus",
     // "sliceTester": "sonnet",
     // "sliceVerifier": "sonnet"
   },

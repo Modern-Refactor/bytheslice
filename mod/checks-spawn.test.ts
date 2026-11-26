@@ -150,7 +150,8 @@ test('the pure parts: roles, given models, markers and the judgment', () => {
   expect(roleOf('quality-reviewer')).toBe('code-reviewer')
   expect(roleOf('bytheslice:discovery')).toBe('code-explorer')
   expect(roleOf('other:discovery')).toBe('other:discovery')
-  // A name the next roster change retires is still registered, so it is still its own role.
+  // A merged name reads as its new agent; a name a script replaced stays as written.
+  expect(roleOf('bytheslice:husky-installer')).toBe('scaffold-writer')
   expect(roleOf('bytheslice:env-scanner')).toBe('env-scanner')
   expect(givenModel('inherit')).toBeNull()
   expect(givenModel(' ')).toBeNull()

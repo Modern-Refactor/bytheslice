@@ -481,6 +481,22 @@ EOF
         kitchen_assert "kitchen $ENGINE async result has no completion" '!("ok" in rows[0])'
       fi
     done
+    # The /final-quality-check gates Bash call: a start row and an end row keyed by the tool_use_id, the command never copied.
+    GATES_CMD='node \"/plugin/skills/final-quality-check/scripts/run-gates.js\" --cwd /repo/PRIVATE_PATH --pm pnpm'
+    rm -f "$LOG"
+    kitchen_event "{\"session_id\":\"gates-1\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_use_id\":\"toolu_g1\",\"tool_input\":{\"command\":\"$GATES_CMD\",\"run_in_background\":true}}"
+    kitchen_event "{\"session_id\":\"gates-1\",\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"tool_use_id\":\"toolu_g1\",\"tool_input\":{\"command\":\"$GATES_CMD\",\"run_in_background\":true},\"tool_response\":{\"backgroundTaskId\":\"bg-1\",\"stdout\":\"PRIVATE_OUTPUT\"}}"
+    kitchen_event "{\"session_id\":\"gates-1\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_use_id\":\"toolu_g2\",\"tool_input\":{\"command\":\"$GATES_CMD\"}}"
+    kitchen_event "{\"session_id\":\"gates-1\",\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"tool_use_id\":\"toolu_g2\",\"tool_input\":{\"command\":\"$GATES_CMD\"},\"tool_response\":{\"stdout\":\"PRIVATE_OUTPUT\",\"interrupted\":false}}"
+    kitchen_event '{"session_id":"gates-1","hook_event_name":"PreToolUse","tool_name":"Bash","tool_use_id":"toolu_g3","tool_input":{"command":"cat skills/final-quality-check/scripts/run-gates.js"}}'
+    kitchen_assert "kitchen $ENGINE gates Bash call writes start and end rows" 'rows.length === 4 && rows.every(r => r.agent === "bytheslice:run-gates" && r.label === "final-quality-check local gates" && r.sid === "gates-1") && rows[0].ev === "PreToolUse" && rows[0].aid === "toolu_g1" && rows[1].ev === "PostToolUse" && rows[1].aid === "toolu_g1" && rows[3].aid === "toolu_g2"'
+    kitchen_assert "kitchen $ENGINE a background gates run has no completion yet; a foreground one does" '!("ok" in rows[1]) && rows[3].ok === true && !("ok" in rows[0])'
+    kitchen_assert "kitchen $ENGINE gates rows never copy the command or output" '!read(log).includes("PRIVATE_") && !read(log).includes("run-gates.js") && !read(log).includes("toolu_g3")'
+    if [ "$ENGINE" = jq ]; then
+      KITCHEN_GATES_PARITY=$("$KITCHEN_NODE" -e 'const fs=require("fs");process.stdout.write(JSON.stringify(fs.readFileSync(process.argv[1],"utf8").split("\n").filter(Boolean).map(l=>{const {t,...r}=JSON.parse(l);return r;})))' "$LOG")
+    else
+      kitchen_assert "kitchen jq/Node gates row parity" "JSON.stringify(rows.map(({t,...r}) => r)) === $(json_str "${KITCHEN_GATES_PARITY:-}")"
+    fi
     for PAYLOAD in '{broken' '[]' 'null' '"string"' '{} {}' '{"hook_event_name":"Stop"} {}' '{"hook_event_name":"PreToolUse","tool_name":"Bash"}' '{"hook_event_name":"PreToolUse","tool_name":"Task"}' '{"hook_event_name":"Unknown"}'; do
       rm -f "$LOG"
       LAST_OUT=$(printf '%s' "$PAYLOAD" | PATH="$KITCHEN_PATH" CLAUDE_PROJECT_DIR="$FIX" "$KITCHEN_BASH" "$KITCHEN_LOG" 2>&1)

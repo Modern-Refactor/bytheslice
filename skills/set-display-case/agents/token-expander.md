@@ -100,7 +100,7 @@ The orchestrating skill may dispatch this agent a second time with user revision
 
 ### Phase 5 — Write Approved Token Set
 
-Once the orchestrating skill confirms user approval, write the approved token values into an intermediate token map file at `docs/design-system-draft.md`. This draft file is what `compliance-pre-check` reads before the final files are written. Do not write `globals.css` or `tailwind.config.ts` directly — those are written by the orchestrating skill from the approved token map.
+Once the orchestrating skill confirms user approval, write the approved token values into an intermediate token map file at `docs/design-system-draft.md`. This draft file is what `scripts/token-check.js complete --draft` reads before the final files are written, so keep every token in a table row whose first cell is the `--token` name, with Light and Dark columns for color tokens and a Value column for the rest. Do not write `globals.css` or `tailwind.config.ts` directly — those are written by the orchestrating skill from the approved token map.
 
 ---
 
@@ -109,7 +109,7 @@ Once the orchestrating skill confirms user approval, write the approved token va
 | Artifact | Path | Notes |
 | --- | --- | --- |
 | Token proposal (pre-approval) | Returned as response text only — not written to disk | User reviews and approves |
-| Approved token map | `docs/design-system-draft.md` | Written only after user approval; read by compliance-pre-check |
+| Approved token map | `docs/design-system-draft.md` | Written only after user approval; read by `token-check.js complete --draft` |
 
 ---
 

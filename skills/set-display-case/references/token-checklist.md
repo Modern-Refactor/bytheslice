@@ -1,11 +1,11 @@
 ---
 title: Token Completeness Checklist
-purpose: Authoritative list of token categories the compliance-pre-check agent verifies. The design-system gate refuses to complete until every required category is satisfied.
+purpose: Authoritative list of token categories scripts/token-check.js verifies. The design-system gate refuses to complete until every required category is satisfied.
 ---
 
 # Token Completeness Checklist
 
-This is the canonical gate. `agents/compliance-pre-check.md` runs against this list. Every **required** category must be fully present before the gate passes. **Optional** categories are noted — include them if relevant to the project.
+This is the canonical gate. `scripts/token-check.js` reads the token names from the tables below on every run (`bundle` for a Claude Design export, `complete` for the gate), so a token added to a table here is checked with no code change. Every **required** category must be fully present before the gate passes. **Optional** categories are noted — include them if relevant to the project.
 
 Values are never dictated here — they vary per project. This checklist concerns **category coverage**, not specific values.
 
@@ -24,7 +24,7 @@ Every token below must have a light-mode value AND a dark-mode value.
 | `--popover` | Popover/dropdown background |
 | `--popover-foreground` | Text on popover |
 
-**Layer contrast (required).** `--background`, `--card`, `--popover`, `--muted` and `--sidebar` form a layer stack, and adjacent layers must be visibly distinct in light AND dark mode: at least about 2 points of OKLCH lightness apart (2 to 6 is the target), with a higher layer lighter in dark mode. `compliance-pre-check` computes the deltas from the values in the CSS entry file and fails the gate on a pair under 2. Every `-foreground` token meets WCAG AA (4.5:1) on its own layer. See the default UI rules ([`../../sell-slice/references/ui-rules.md`](../../sell-slice/references/ui-rules.md)).
+**Layer contrast (required).** `--background`, `--card`, `--popover`, `--muted` and `--sidebar` form a layer stack, and adjacent layers must be visibly distinct in light AND dark mode: at least about 2 points of OKLCH lightness apart (2 to 6 is the target), with a higher layer lighter in dark mode. `token-check.js complete` computes the deltas from the values in the CSS entry file (or the approved draft) and fails the gate on a pair under 2. Every `-foreground` token meets WCAG AA (4.5:1) on its own layer. See the default UI rules ([`../../sell-slice/references/ui-rules.md`](../../sell-slice/references/ui-rules.md)).
 
 ---
 
@@ -228,13 +228,13 @@ Every **color token** must have both a light-mode value and a dark-mode value. N
 
 Implementation: use CSS custom properties scoped to `.dark` (or `[data-theme="dark"]`) — either via Tailwind's `darkMode: 'class'` strategy or an equivalent. Document the strategy in `docs/design-system.md`.
 
-**Compliance check:** `compliance-pre-check` will flag any color token that appears in `:root` but has no corresponding dark variant.
+**Compliance check:** `token-check.js` flags any color token that appears in `:root` but has no corresponding dark variant.
 
 ---
 
 ## Gate Rule
 
-`compliance-pre-check` returns `status: pass` only when:
+`token-check.js complete` returns `status: pass` only when:
 
 1. All **required** categories above are covered
 2. All **conditional** categories (sidebar) are covered if their condition is met

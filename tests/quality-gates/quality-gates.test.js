@@ -80,7 +80,9 @@ test('setup-shop tells the operator once that enabled gates are binding and offe
   assert.ok(options, 'Q-gates follow-up lists the classes');
   const classes = new Set(ruleClasses());
   for (const option of options.match(/"([^"]+)"/g).map((s) => s.slice(1, -1))) assert.ok(classes.has(option), `${option} is a gate class`);
-  assert.match(readText('skills/setup-shop/agents/config-generator.md'), /\*\*Always write `gates\.enforcement: "fix"`\*\*/);
+  assert.match(readText(SCHEMA), /\*\*`scripts\/write-config\.js` always writes `gates\.enforcement: "fix"`\*\*/);
+  const { GATE_CLASSES } = require('../../skills/setup-shop/scripts/write-config');
+  assert.deepEqual([...GATE_CLASSES].sort(), [...ruleClasses()].sort(), 'write-config.js accepts exactly the quality-gates.md gate classes');
   assert.match(readText('skills/sell-slice/agents/rules-loader.md'), /`gates\.enforcement`, `gates\.advisory`, `gates\.declared`/);
 });
 

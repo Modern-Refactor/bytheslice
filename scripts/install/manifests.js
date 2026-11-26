@@ -73,22 +73,37 @@ function resolveRequestedSkills(requestedSkills, skillIndex) {
   return [...resolved];
 }
 
-// A skill that dispatches another skill's agent links it as ../<skill>/agents/<file>.md
-// (special-order runs sell-slice's code-explorer and cook-pizzas' stage-planner and
-// phased-plan-writer). Those links are the dependency map: installing a skill also
-// installs every skill whose agents it dispatches, transitively, so the link resolves.
-const AGENT_LINK = /\]\(\.\.\/([A-Za-z0-9_-]+)\/agents\/[^)\s]+\)/g;
+// A SKILL.md that links a file inside another skill (../<skill>/agents/<file>.md for an agent it
+// dispatches, ../<skill>/references/<file>.md for a shared reference such as sell-slice's
+// script-contract.md, or any other file there) needs that skill installed, or the link is dead
+// in a skills-only install. Those links are the dependency map, followed transitively. A link
+// to another skill's own SKILL.md names a peer workflow, not a file this one reads, so it is
+// not a dependency (following those would pull in every skill). Each link is resolved from
+// the SKILL.md's own folder and counts only when it lands on an existing file.
+const RELATIVE_LINK = /\]\((\.\.\/[^)\s#]+)(?:#[^)\s]*)?\)/g;
 
-function agentDependencies(repoRoot, skillPath, skillIndex) {
+function linkDependencies(repoRoot, skillPath, skillIndex) {
   const skillFile = path.join(repoRoot, skillPath, "SKILL.md");
   if (!fs.existsSync(skillFile)) {
     return [];
   }
   const content = fs.readFileSync(skillFile, "utf8");
+  const skillsRoot = path.join(repoRoot, "skills");
   const found = new Set();
-  for (const match of content.matchAll(AGENT_LINK)) {
-    const dependency = path.join(path.dirname(skillPath), match[1]).split(path.sep).join("/");
-    if (dependency !== skillPath && skillIndex.allSkillPaths.includes(dependency)) {
+  for (const match of content.matchAll(RELATIVE_LINK)) {
+    const target = path.resolve(path.dirname(skillFile), match[1]);
+    const parts = path.relative(skillsRoot, target).split(path.sep);
+    if (parts[0] === ".." || path.isAbsolute(parts[0]) || parts.length < 2) {
+      continue;
+    }
+    if (parts.length === 2 && parts[1] === "SKILL.md") {
+      continue;
+    }
+    const dependency = path.posix.join("skills", parts[0]);
+    if (dependency === skillPath.split(path.sep).join("/") || !skillIndex.allSkillPaths.includes(dependency)) {
+      continue;
+    }
+    if (fs.existsSync(target) && fs.statSync(target).isFile()) {
       found.add(dependency);
     }
   }
@@ -96,14 +111,15 @@ function agentDependencies(repoRoot, skillPath, skillIndex) {
 }
 
 /**
- * The selected skills plus every skill whose agents they dispatch. `added` lists
- * each dependency that was not selected, with the selected skills that need it.
+ * The selected skills plus every skill whose files (agents, references, scripts) their
+ * SKILL.md links. `added` lists each dependency that was not selected, with the selected
+ * skills that need it.
  */
 function resolveSkillDependencies(repoRoot, skillPaths, skillIndex) {
   const all = [...skillPaths];
   const neededBy = new Map();
   for (let index = 0; index < all.length; index += 1) {
-    for (const dependency of agentDependencies(repoRoot, all[index], skillIndex)) {
+    for (const dependency of linkDependencies(repoRoot, all[index], skillIndex)) {
       if (!all.includes(dependency)) {
         all.push(dependency);
       }

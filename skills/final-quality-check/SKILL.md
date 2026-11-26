@@ -5,11 +5,11 @@ user-invocable: true
 triggers: ["/bytheslice:final-quality-check", "/final-quality-check", "install the quality line", "wire the inspection station", "/bytheslice:scaffold-ci-cd", "/scaffold-ci-cd", "scaffold ci/cd", "set up ci", "bootstrap quality gates", "ci-cd stage"]
 ---
 <!-- skills/final-quality-check/SKILL.md -->
-<!-- Daily-prep skill (run before /sell-slice). Pizza-shop framing: install the quality line every pie crosses before landing on the display tray. Orchestrator-only: dispatches nine specialized agents to bootstrap the production-grade CI/CD + E2E + design-system-compliance + visual-regression baseline on a dedicated chore branch. Mode-detected (standalone vs sequential). -->
+<!-- Daily-prep skill (run before /sell-slice). Pizza-shop framing: install the quality line every pie crosses before landing on the display tray. Orchestrator-only: dispatches three specialized agents (scaffold-discovery, scaffold-writer once per sub-block, a11y-discovery-runner) and runs one bundled script (scripts/run-gates.js) to bootstrap the production-grade CI/CD + E2E + design-system-compliance + visual-regression baseline on a dedicated chore branch. Mode-detected (standalone vs sequential). -->
 
 # Final Quality Check: CI/CD + Verification Baseline
 
-This skill is the orchestrator for the CI/CD baseline. It does not write workflows itself; it **dispatches nine specialized agents** that each own one slice of the scaffold work. The orchestrator's job is detection, sequencing, user-input gating, and walking the completion checklist.
+This skill is the orchestrator for the CI/CD baseline. It does not write workflows itself; it **dispatches three specialized agents** (`scaffold-discovery` once, `scaffold-writer` once per writing sub-block, `a11y-discovery-runner` once) and runs **one bundled script** for the local gates. The orchestrator's job is detection, sequencing, user-input gating, staging and committing, and walking the completion checklist.
 
 ## Mode detection
 
@@ -22,7 +22,7 @@ Honor an explicit `--standalone` or `--sequential` flag if passed; otherwise aut
 
 ## Quality tier
 
-`quality.tier` in `bytheslice.config.json` sets how heavy a line this run installs. Resolve it once, before Phase 0, and pass the resolved value to every Phase 3 and Phase 4 agent as `quality_tier`.
+`quality.tier` in `bytheslice.config.json` sets how heavy a line this run installs. Resolve it once, before Phase 0, and pass the resolved value to every Phase 3 agent as `quality_tier` and to the Phase 4 script as `--tier`.
 
 | Value | What it installs |
 |---|---|
@@ -59,26 +59,28 @@ Under ship-once the whole app ships in one PR at the end, so the scaffold does n
 
 | File | Purpose |
 | --- | --- |
-| [references/scaffold-artifact-templates.md](references/scaffold-artifact-templates.md) | Verbatim file templates for every CI/CD artifact (workflows, husky hook, PR template, regex sweep script, etc.). Every implementer agent reads this before writing. |
+| [references/scaffold-artifact-templates.md](references/scaffold-artifact-templates.md) | Verbatim file templates for every CI/CD artifact (workflows, husky hook, PR template, regex sweep script, etc.). `scaffold-writer` reads this before writing every block; the orchestrator reads it for sub-block D. |
+| [scripts/run-gates.js](scripts/run-gates.js) | Phase 4 local gates runner. Zero-dependency Node; runs every gate the project defines with the detected package manager, writes one log per gate, prints only a JSON summary. |
 | [references/prd-ci-cd-checklist.md](references/prd-ci-cd-checklist.md) | **Project-wide runtime guardrails**, not scaffold-time setup. Master-checklist updates, CI gate alignment, deterministic pipelines, slice-per-PR rule, failure-artifact upload; these apply to every agent on every PR. Sub-block H of Phase 3 appends this content into the project rules file (CLAUDE.md / AGENTS.md) so every later stage skill picks it up automatically. |
 
 ## Subagent Roster
 
 Each agent is a **registered plugin agent**: dispatch by type `bytheslice:<name>` (Agent tool `subagent_type`, or `Workflow` `agentType`), passing only the task inputs as the prompt. The files under `./agents/` carry the role prompt plus enforced model/effort/tools. Fallback (Cursor, or a host without plugin-agent registration): Read the file and dispatch it per [`loop-workflow-fallback-pattern.md`](../cook-pizzas/references/loop-workflow-fallback-pattern.md) "Agent shape on the fallback path": its frontmatter goes first as a header (model tier and effort, the normalized tool allowlist, the read-only line for an agent without write tools, the no-git-writes line), then its body, then the inputs; log one self-check line per dispatch in the run log.
 
-Old agent names met in a stage file, checklist or earlier chat message (for example `spec-reviewer`, `quality-reviewer`) mean the new agent and mode in [`../sell-slice/references/legacy-agent-names.md`](../sell-slice/references/legacy-agent-names.md).
+Old agent names met in a stage file, checklist or earlier chat message (for example `spec-reviewer`, `quality-reviewer`, `framework-detector`, `workflow-writer`, `local-gates-runner`) mean the new agent, mode or script in [`../sell-slice/references/legacy-agent-names.md`](../sell-slice/references/legacy-agent-names.md).
 
 | Phase | Agent file | Model | Effort | Mode |
 |-------|-----------|-------|--------|------|
-| 0 | [agents/scaffold-discovery.md](agents/scaffold-discovery.md) | opus | medium | readonly |
-| 0 | [agents/framework-detector.md](agents/framework-detector.md) | haiku | low | readonly |
-| 3A | [agents/e2e-installer.md](agents/e2e-installer.md) | sonnet | medium | write |
-| 3B | [agents/workflow-writer.md](agents/workflow-writer.md) | sonnet | medium | write |
-| 3C | [agents/husky-installer.md](agents/husky-installer.md) | haiku | low | write |
-| 3E | [agents/lint-config-writer.md](agents/lint-config-writer.md) | haiku | low | write |
+| 0 | [agents/scaffold-discovery.md](agents/scaffold-discovery.md) | opus | medium | readonly (stack profile + E2E plan) |
+| 3A | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: e2e` | sonnet | medium | write |
+| 3B | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: workflows` | sonnet | medium | write |
+| 3C | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: husky` | sonnet | medium | write (dispatch at low effort where the host allows, see below) |
+| 3E | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: lint` | sonnet | medium | write (dispatch at low effort where the host allows, see below) |
 | 3F | [agents/a11y-discovery-runner.md](agents/a11y-discovery-runner.md) | sonnet | medium | readonly |
-| 3G | [agents/branch-protection-writer.md](agents/branch-protection-writer.md) | haiku | low | write |
-| 4 | [agents/local-gates-runner.md](agents/local-gates-runner.md) | sonnet | medium | write |
+| 3G | [agents/scaffold-writer.md](agents/scaffold-writer.md) `block: branch-protection` | sonnet | medium | write (dispatch at low effort where the host allows, see below) |
+| 4 | [scripts/run-gates.js](scripts/run-gates.js) (script, no agent) | none | none | runs commands, writes logs |
+
+`scaffold-writer` is one agent dispatched **once per sub-block**, never once for all of them, so each sub-block keeps its own review pass and its own commit. Its frontmatter effort is `medium`; dispatch blocks C, E and G with `effort: low` where the host takes a per-dispatch effort (the Agent tool's `effort` input), and leave the default where it does not. `scaffold-writer` makes no git writes: it returns `files_changed`, and the orchestrator stages exactly those paths (`git add -- <paths>`, never `git add -A`) and commits.
 
 The PR template (Phase 3D) is small enough that the orchestrator writes it directly from the templates file; no agent is needed.
 
@@ -97,16 +99,15 @@ The PR template (Phase 3D) is small enough that the orchestrator writes it direc
 | Partially built (some artifacts present, others missing) | Run discovery, dispatch only the agents that fill the gaps; never overwrite existing artifacts without surfacing to the user. |
 | Not yet started (clean repo, no `.github/workflows/`) | Run the full pipeline end-to-end. |
 
-`scaffold-discovery` reports `already_present_scaffold_artifacts`; the orchestrator uses that list to decide which Phase 3 sub-blocks to dispatch.
+`scaffold-discovery` reports `already_present_scaffold_artifacts`; the orchestrator uses that list to decide which Phase 3 sub-blocks to dispatch `scaffold-writer` for.
 
 ## Workflow
 
-### Phase 0: Discovery (parallel)
+### Phase 0: Discovery
 
-Dispatch in one batch:
+Dispatch `scaffold-discovery` once. It returns the stack profile (package manager, framework, monorepo tooling, existing workflows, test tooling, ESLint configs, DB presence, already-present artifacts) and, built from that profile in the same pass, the `e2e_plan`: Playwright, Vitest browser mode or skip-E2E, root-only or per-app config in a monorepo, the viewport set, and which apps get a `@visual` suite. The E2E decision needs the profile, so the two are never dispatched in parallel.
 
-1. `scaffold-discovery`: package manager, framework, monorepo tooling, existing workflows, DB presence
-2. `framework-detector`: E2E framework choice + target apps
+If the operator's Phase 1 answer on critical-path apps changes the E2E targets, re-dispatch `scaffold-discovery` with that answer before Phase 3, or narrow `e2e_plan.target_apps_for_e2e` to the named apps yourself when the answer only removes apps.
 
 ### Phase 1: Clarifying Questions (Plan Mode)
 
@@ -130,24 +131,24 @@ Wait for answers before continuing. Under `run.unattended: true`, skip the promp
 
 ### Phase 3: Implementation (sub-blocks A through H, sequential)
 
-Each sub-block dispatches its agent, waits for the structured return, and commits before moving to the next.
+Each sub-block dispatches its agent, waits for the structured return, stages the returned `files_changed` and commits before moving to the next. Every `scaffold-writer` dispatch gets the full `scaffold-discovery` return (profile and `e2e_plan`), the templates path, `quality_tier` and `design_system_present`, plus the block's own inputs.
 
 | Block | Agent | What it produces |
 |---|---|---|
-| A | `e2e-installer` | Playwright installed, scripts in package.json, baseline @feature/@regression-core/@visual specs, `tests/visual/baselines/` |
-| B | `workflow-writer` | `.github/workflows/{ci,e2e,e2e-coverage,design-system-compliance,db-schema-drift}.yml` |
-| C | `husky-installer` | `.husky/pre-push` with the slice-tier gate chain (gate tier 2); offers to swap a legacy full-chain hook |
+| A | `scaffold-writer` `block: e2e` | Playwright installed, scripts in package.json, baseline @feature/@regression-core/@visual specs, `tests/visual/baselines/`, E2E tasks wired into `turbo.json` / `nx.json` |
+| B | `scaffold-writer` `block: workflows` | `.github/workflows/{ci,e2e,e2e-coverage,design-system-compliance,db-schema-drift}.yml`; an existing file is skipped and reported, and rewritten only on a re-dispatch with `overwrite_approved` after the operator approves |
+| C | `scaffold-writer` `block: husky` | `.husky/pre-push` with the slice-tier gate chain (gate tier 2); a legacy full-chain hook comes back as a `destructive_operation` HITL offering the swap, re-dispatched with `swap_approved: true` on "swap"; a custom hook is a conflict, never overwritten |
 | D | (orchestrator direct) | `.github/pull_request_template.md` from the templates file |
-| E | `lint-config-writer` | eslint-plugin-tailwindcss config additions, `.stylelintrc.json`, `.gitignore` updates |
+| E | `scaffold-writer` `block: lint` | eslint-plugin-tailwindcss added to the existing ESLint config with every existing rule kept, `.stylelintrc.json`, `.gitignore` updates |
 | F | `a11y-discovery-runner` | Scoped shadscan accessibility findings, written into the stage report as UNVERIFIED LEADS. Writes no project files. Non-blocking. |
-| G | `branch-protection-writer` | `scripts/setup-branch-protection.sh` (executable) |
+| G | `scaffold-writer` `block: branch-protection` | `scripts/setup-branch-protection.sh` (executable), from block B's `required_check_names_for_branch_protection` |
 | H | (orchestrator direct) | Project rules file (CLAUDE.md / AGENTS.md) "CI/CD Operational Rules" section populated from `references/prd-ci-cd-checklist.md` |
 
-**Lean tier changes per block** (pass `quality_tier: lean` to each agent; the block letters do not change):
+**Lean tier changes per block** (pass `quality_tier: lean` to each dispatch; the block letters do not change):
 
 | Block | Lean output |
 |---|---|
-| A | Playwright installed, `test:e2e` and `test:e2e:smoke` scripts, ONE `@smoke` spec over the app's main flow, a single-project `playwright.config.ts`. No `@feature` / `@regression-core` / `@visual` specs, no `tests/visual/baselines/`. Skipped when `framework-detector` returns skip-E2E. `check:design-system` only when a design system exists. |
+| A | Playwright installed, `test:e2e` and `test:e2e:smoke` scripts, ONE `@smoke` spec over the app's main flow, a single-project `playwright.config.ts`. No `@feature` / `@regression-core` / `@visual` specs, no `tests/visual/baselines/`. Skipped when `scaffold-discovery`'s `e2e_plan` is skip-E2E (`e2e_skipped: true`). `check:design-system` only when a design system exists. |
 | B | `.github/workflows/ci.yml` from the lean template (lint, typecheck, unit-tests, build, e2e-smoke), plus `design-system-compliance.yml` only when a design system exists. No `e2e.yml`, `e2e-coverage.yml` or `db-schema-drift.yml`. |
 | C | `.husky/pre-push` from the lean template: the same lean set CI runs. |
 | D | The PR template's lean checklist (no `@regression-core` or `@visual` rows). |
@@ -209,9 +210,21 @@ The orchestrator (no subagent dispatch; this is a small, deterministic write sim
 
 ### Phase 4: Local Verification Gates
 
-Dispatch `local-gates-runner` to run lint, typecheck, design-system check, unit/integration, and all three E2E suites. The first run also generates initial visual baselines.
+Run the bundled script by its absolute path (never by changing into this skill's folder); there is no agent for this phase. It follows the [script contract](../sell-slice/references/script-contract.md), and every relative path argument (`--log-dir`, `--baselines-dir`) resolves against `--cwd`:
 
-Under the lean tier it runs the lean set instead: lint, typecheck, `check:design-system` (only when a design system exists), unit tests, build, and `test:e2e:smoke`. No baselines are generated.
+```bash
+node "<this-skill-directory>/scripts/run-gates.js" --cwd <project-root> --pm <package_manager> --tier <quality_tier> [--design-system] [--skip-e2e] [--baselines-dir <dir>[,<dir>...]]
+```
+
+- `--pm` is `scaffold-discovery`'s `package_manager`; `--design-system` when `design_system_present`; `--skip-e2e` when `e2e_plan.e2e_skipped`.
+- **Per-app E2E plan (`e2e_plan.e2e_config_strategy: per-app`):** pass `--baselines-dir` with every `visual_baselines_dir` of the `target_apps_for_e2e` entries that have `visual_enabled: true` (comma-separated, or the flag once per folder). Without it the script watches the root `tests/visual/baselines/`, which a per-app plan never fills, so every run would regenerate and never compare. Under `root-only` leave the flag out.
+- **Run it in the background** (Bash `run_in_background: true`) and wait for the completion notice: the e2e suites routinely run past a foreground Bash timeout. Then read the one JSON line it printed (also saved as `summary.json` in the log dir). stdout holds only that JSON; every gate's full output is in its own log file under `.claude/.bytheslice-state/gates/` (override with `--log-dir`). Read a log only for a gate that failed, starting from the summary's 50-line `tail`.
+- It runs lint, typecheck, `check:design-system`, unit tests (`test`), `test:integration` and `build` when the project defines them, then `test:e2e:feature`, `test:e2e:regression` and `test:e2e:visual`, with `<pm> run <script>`. Every gate runs even after an earlier one fails, so one run gives the full picture. Each gate reports `name`, `command`, `status` (`pass`, `fail`, `baselines_generated`, `not_applicable`), `exit_code`, `duration_ms`, `log` and `tail`, plus `failed_specs` for a failed e2e suite; `overall` is `pass` or `fail`. The exit code is 0 either way: a failed gate is `overall: fail` in the JSON, and exit 1 means the script itself broke (report its stderr line).
+- **First run, visual baselines.** When every baselines folder (`tests/visual/baselines/`, or each `--baselines-dir`) holds no baseline yet (or with `--first-run`), the visual suite runs with `--update-snapshots`, reports `baselines_generated` and lists the new files in `new_baselines`. The flag goes after `--` so the package manager hands it to the script (npm, pnpm, bun and Yarn 1 drop that first `--`; Yarn 2+ gets the flag bare), and a script that runs a turbo pipeline gets a second `--` so turbo passes it to each task. When only some folders are empty nothing is regenerated (a folder that has baselines is never rewritten): the gate lists the empty ones in `empty_baselines_dirs`, Playwright's default mode writes their baselines and fails those tests once, and a rerun compares. The script never stages: stage those paths yourself with the rest of the scaffold.
+- **Exit 2 is a HITL, not a gate failure.** A missing required script, a missing package manager or no `package.json` prints `{"needs_human": {"category", "question", "context"}, "missing_scripts" | "missing_tooling": [...]}` and runs nothing. The conductor raises it with `bts_hitl` (its `category`, `question` and `context`), asks in chat, and stops for the answer, exactly as for an agent's `needs_human` return. Under `run.unattended: true`, a missing gate script is treated as a failed gate instead (re-dispatch `scaffold-writer` `block: e2e` to add it, then rerun), and a missing package manager or `package.json` stops this phase with the reason recorded in the order ticket.
+- `--only <names>` reruns just the named gates (gate or script names, comma-separated), for example after a fix: `--only unit_integration,test:e2e:visual`.
+
+Under the lean tier (`--tier lean`) it runs the lean set instead: lint, typecheck, `check:design-system` (only with `--design-system`), unit tests, build, and `test:e2e:smoke` (when the script exists), and reports the standard suites as `not_applicable`. No baselines are generated. Under ship-once, also run any `run:` step of the generated `ci.yml` and (standard tier) `e2e.yml` that the script's gates do not already cover, so local and CI agree.
 
 If any gate fails, fix on the same branch before proceeding. This one-time run covers the full local suite; afterwards the Husky `pre-push` hook enforces only the slice tier (gate tier 2: lint, typecheck, unit tests, build, DB tests when the schema or migrations change) on every push, and CI runs the full suite at each PR (tier 4). `--no-verify` is never the answer to a red hook.
 
@@ -285,10 +298,10 @@ Sections 1 to 6 below describe the **standard tier** with the default PR deliver
 - [ ] `.husky/pre-push` exists, is executable, and runs the lean set from the lean template (lint, typecheck, test, build, `test:e2e:smoke`, DB tests only when the schema or migrations change).
 - [ ] `.github/pull_request_template.md` exists with the lean checklist.
 - [ ] `.github/workflows/ci.yml` exists from the lean template (lint, typecheck, unit-tests, build, e2e-smoke).
-- [ ] `.github/workflows/design-system-compliance.yml`, `.eslintrc.json` tailwindcss additions and `.stylelintrc.json` exist IF a design system exists, and are absent otherwise.
+- [ ] `.github/workflows/design-system-compliance.yml`, the project ESLint config's tailwindcss additions and `.stylelintrc.json` exist IF a design system exists, and are absent otherwise.
 - [ ] No `e2e.yml`, `e2e-coverage.yml`, `db-schema-drift.yml`, `@regression-core` spec, `@visual` spec or `tests/visual/baselines/` was written.
 - [ ] `package.json` has `test:e2e` and `test:e2e:smoke` (plus `check:design-system` when a design system exists).
-- [ ] Exactly one `@smoke` spec exists and walks the app's main flow (skip when `framework-detector` returned skip-E2E, and say so).
+- [ ] Exactly one `@smoke` spec exists and walks the app's main flow (skip when `scaffold-discovery`'s `e2e_plan` is skip-E2E, and say so).
 - [ ] `scripts/setup-branch-protection.sh` exists, is executable, and lists the lean required checks.
 - [ ] `.gitignore` excludes `playwright-report/`, `test-results/`, `.playwright/`.
 - [ ] The rules-file "CI/CD Operational Rules" section and the no-shadscan-gate grep are done as in section 1.

@@ -1,7 +1,7 @@
 {
   "name": "bytheslice",
-  "version": "7.0.0",
-  "description": "ByTheSlice runs your project like a grab-and-go pizza shop. v5 delivers in Pies (coherent chapters, usually 3 to 8 slices and fewer for a small app, one PR each) built from Slices (single deliverable units). Everyday loop: /sell-pie bakes a whole Pie autonomously, driving each slice through a context-separated build, test, verify and fix Workflow and committing per slice; at the pie boundary /box-it-up opens one PR, watches CI, and merges. /sell-slice is the high-touch single-slice loop. One-time prep: /setup-shop, /create-menu (PRD), /cook-pizzas (Pie/Slice roadmap; --repie migrates v4 checklists), /set-display-case (design system plus /library preview route), /final-quality-check (CI/E2E), /open-the-shop (credentials). The Library Preview Gate shows every user-visible component before it ships. Ships 42 registered subagents; in Claude Code all 42 run with enforced model tiers, tool allowlists and effort levels. The Pass, a Claude Code mod, draws a live pane and band beside the chat and warns when a delivery rule slips; nothing refuses a call, and the plugin keeps only the hooks it needs. /pizza-party builds a whole app end to end from a brief: one interview, then every pie with all gates local, one PR, a deploy to whatever host the operator has authorized and a URL. /dashboard opens a local read-only 3D kitchen (with --lobby, one page for every ByTheSlice project on the machine), /special-order adds features mid-flight, and /inspect-display audits the running app end to end.",
+  "version": "7.1.0",
+  "description": "ByTheSlice runs your project like a grab-and-go pizza shop. v5 delivers in Pies (coherent chapters, usually 3 to 8 slices and fewer for a small app, one PR each) built from Slices (single deliverable units). Everyday loop: /sell-pie bakes a whole Pie autonomously, driving each slice through a context-separated build, test, verify and fix Workflow and committing per slice; at the pie boundary /box-it-up opens one PR, watches CI, and merges. /sell-slice is the high-touch single-slice loop. One-time prep: /setup-shop, /create-menu (PRD), /cook-pizzas (Pie/Slice roadmap; --repie migrates v4 checklists), /set-display-case (design system plus /library preview route), /final-quality-check (CI/E2E), /open-the-shop (credentials). The Library Preview Gate shows every user-visible component before it ships. Ships 28 registered subagents; in Claude Code all 28 run with enforced model tiers, tool allowlists and effort levels. The Pass, a Claude Code mod, draws a live pane and band beside the chat and warns when a delivery rule slips; nothing refuses a call, and the plugin keeps only the hooks it needs. /pizza-party builds a whole app end to end from a brief: one interview, then every pie with all gates local, one PR, a deploy to whatever host the operator has authorized and a URL. /dashboard opens a local read-only 3D kitchen (with --lobby, one page for every ByTheSlice project on the machine), /special-order adds features mid-flight, and /inspect-display audits the running app end to end.",
   "author": {
     "name": "Steven Light"
   },
@@ -32,7 +32,9 @@
   "mcpServers": {
     "kitchen": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/kitchen-server.js"]
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/kitchen-server.js"
+      ]
     }
   },
   "agents": [
@@ -45,19 +47,9 @@
     "./skills/create-menu/agents/brief-analyzer.md",
     "./skills/create-menu/agents/prd-reviewer.md",
     "./skills/final-quality-check/agents/a11y-discovery-runner.md",
-    "./skills/final-quality-check/agents/branch-protection-writer.md",
-    "./skills/final-quality-check/agents/e2e-installer.md",
-    "./skills/final-quality-check/agents/framework-detector.md",
-    "./skills/final-quality-check/agents/husky-installer.md",
-    "./skills/final-quality-check/agents/lint-config-writer.md",
-    "./skills/final-quality-check/agents/local-gates-runner.md",
     "./skills/final-quality-check/agents/scaffold-discovery.md",
-    "./skills/final-quality-check/agents/workflow-writer.md",
+    "./skills/final-quality-check/agents/scaffold-writer.md",
     "./skills/inspect-display/agents/platform-walker.md",
-    "./skills/open-the-shop/agents/checklist-generator.md",
-    "./skills/open-the-shop/agents/env-scanner.md",
-    "./skills/open-the-shop/agents/env-verifier.md",
-    "./skills/open-the-shop/agents/github-secrets-scanner.md",
     "./skills/sell-slice/agents/code-explorer.md",
     "./skills/sell-slice/agents/code-reviewer.md",
     "./skills/sell-slice/agents/debug-instrumenter.md",
@@ -72,11 +64,7 @@
     "./skills/sell-slice/agents/rules-loader.md",
     "./skills/sell-slice/agents/slice-tester.md",
     "./skills/sell-slice/agents/slice-verifier.md",
-    "./skills/set-display-case/agents/bundle-validator.md",
-    "./skills/set-display-case/agents/compliance-pre-check.md",
     "./skills/set-display-case/agents/library-route-scaffolder.md",
-    "./skills/set-display-case/agents/token-expander.md",
-    "./skills/setup-shop/agents/ci-cd-detector.md",
-    "./skills/setup-shop/agents/config-generator.md"
+    "./skills/set-display-case/agents/token-expander.md"
   ]
 }

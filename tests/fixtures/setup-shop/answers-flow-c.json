@@ -1,0 +1,11 @@
+{
+  "flow": "C",
+  "modelTiers": "defaults",
+  "stages": { "maxTasksPerStage": 5 },
+  "mcps": ["shadcn", "Figma"],
+  "visualReview": { "tools": "defaults", "vizzly": false },
+  "hitl": ["legal_review: Legal sign-off needed before this lands."],
+  "rules": "none",
+  "bootstrap": { "variant": "single-app", "stack": "nextjs", "roadmapFile": "ROADMAP.local.md" },
+  "gates": { "advisory": ["visual"], "declared": ["links: pnpm check:links", "pnpm check:types"] }
+}

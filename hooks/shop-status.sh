@@ -140,7 +140,7 @@ fi
 # and a 6.x ledger stops printing the line a week after its last old row. The list
 # is every LEGACY_AGENT_ALIASES name no longer registered (mod/policy.ts);
 # tests/pass/legacy-aliases.test.js holds the two equal.
-LEGACY_NAMES='spec-reviewer|quality-reviewer|break-ui-runner|design-critic|discovery|checklist-curator|complexity-assessor|stage-decomposer|db-schema-stage-writer|modern-ux-expert|layout-architect|block-composer|component-crafter|bootstrap-runner|proposal-drafter|consistency-checker'
+LEGACY_NAMES='spec-reviewer|quality-reviewer|break-ui-runner|design-critic|discovery|checklist-curator|complexity-assessor|stage-decomposer|db-schema-stage-writer|modern-ux-expert|layout-architect|block-composer|component-crafter|bootstrap-runner|proposal-drafter|consistency-checker|env-scanner|github-secrets-scanner|checklist-generator|env-verifier|bundle-validator|compliance-pre-check|config-generator|local-gates-runner|ci-cd-detector|e2e-installer|workflow-writer|husky-installer|lint-config-writer|branch-protection-writer|framework-detector'
 LEGACY_LOGS=()
 for base in "$HOOK_CWD" "$(bts_root)"; do
   [ -n "$base" ] && [ -d "$base" ] || continue
