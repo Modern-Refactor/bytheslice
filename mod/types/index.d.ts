@@ -373,6 +373,8 @@ declare module 'claude-code' {
       'pass.activeSkill': string | null
       /** The check and spawn policy read once at session start; null before then (the defaults apply). */
       'pass.policy': PassPolicy | null
+      /** Whether `run.unattended` was on at `t`, read on demand from bytheslice.config.json and kept 30 seconds; null before the first read. */
+      'pass.unattended': { t: number; on: boolean } | null
       /** `code|key` of each warning reported, to when; a key reports at most once a minute. */
       'pass.reported': Record<string, number>
       /** The latest finding while the band still shows it, or null. */

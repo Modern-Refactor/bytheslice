@@ -9,7 +9,7 @@ const path = require('node:path');
 const { parseJsonc, readJsonc } = require('./jsonc');
 
 const TEMPLATE = path.join(__dirname, '..', 'references', 'bytheslice.config.example.json');
-const TIERS = new Set(['haiku', 'sonnet', 'opus']);
+const TIERS = new Set(['haiku', 'sonnet', 'opus', 'fable']);
 // The gate classes quality-gates.md defines (tests/quality-gates keeps this list in step with it).
 const GATE_CLASSES = ['lint', 'typecheck', 'build', 'tests', 'e2e', 'visual', 'design-system', 'accessibility', 'ci', 'declared'];
 const MCP_KEYS = { shadcn: 'shadcn', magic: 'magic', 'magic (21st.dev)': 'magic', figma: 'figma', 'chrome devtools': 'chromeDevTools', chromedevtools: 'chromeDevTools', supabase: 'supabase' };
@@ -69,7 +69,7 @@ function normalize(answers, flow) {
 
   // Q-modelTiers: "defaults" and "manual" both leave the commented hints; an object overrides.
   if (isObject(a.modelTiers)) {
-    for (const [agent, tier] of Object.entries(a.modelTiers)) if (!TIERS.has(tier)) throw new UsageError(`modelTiers.${agent} must be haiku, sonnet or opus`);
+    for (const [agent, tier] of Object.entries(a.modelTiers)) if (!TIERS.has(tier)) throw new UsageError(`modelTiers.${agent} must be haiku, sonnet, opus or fable`);
     config.modelTiers = a.modelTiers;
   } else if (a.modelTiers !== undefined && !skipped(a.modelTiers) && a.modelTiers !== 'manual') {
     throw new UsageError('modelTiers must be "defaults", "manual" or an object of agent tiers');
@@ -165,6 +165,16 @@ function normalize(answers, flow) {
     else if (v !== undefined) throw new UsageError(`section ${k} must be an object`);
   }
   return { config, ignored, notes };
+}
+
+// run.standIn (the /pizza-party stand-in operator): enabled a boolean, maxDispatches an integer from 0 to 50.
+function checkStandIn(run) {
+  if (!isObject(run) || run.standIn === undefined) return;
+  const standIn = run.standIn;
+  if (!isObject(standIn)) throw new UsageError('run.standIn must be an object');
+  if (standIn.enabled !== undefined && typeof standIn.enabled !== 'boolean') throw new UsageError('run.standIn.enabled must be true or false');
+  const max = standIn.maxDispatches;
+  if (max !== undefined && !(Number.isInteger(max) && max >= 0 && max <= 50)) throw new UsageError('run.standIn.maxDispatches must be an integer from 0 to 50');
 }
 
 // Path of the first string that looks like a pasted credential, or null.
@@ -383,6 +393,7 @@ function writeConfig(answers, opts = {}) {
   config = deepMerge(config, fromAnswers);
   config.gates = { ...(isObject(config.gates) ? config.gates : {}), enforcement: 'fix' };
   for (const k of Object.keys(config.gates)) if (k !== 'enforcement' && Array.isArray(config.gates[k]) && config.gates[k].length === 0) delete config.gates[k];
+  checkStandIn(config.run);
 
   const secretAt = findSecret(config);
   if (secretAt) {

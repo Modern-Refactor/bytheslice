@@ -1,5 +1,5 @@
 // tests/setup-shop/write-config.test.js
-// Covers write-config.js: Flow A and Flow B/C targets, the example template's commented hints kept for untouched sections, gates.enforcement "fix" always written, valid JSONC, the overwrite refusal (which says comments are not kept), merge, the timestamped backup (under .claude/.bytheslice-state/backups/, beside the defaults file for Flow A) before any merge or overwrite, project-relative paths, and the pasted-credential refusal.
+// Covers write-config.js: Flow A and Flow B/C targets, the example template's commented hints kept for untouched sections, gates.enforcement "fix" always written, the fable tier and run.standIn checks, valid JSONC, the overwrite refusal (which says comments are not kept), merge, the timestamped backup (under .claude/.bytheslice-state/backups/, beside the defaults file for Flow A) before any merge or overwrite, project-relative paths, and the pasted-credential refusal.
 'use strict';
 
 const test = require('node:test');
@@ -156,6 +156,38 @@ test('--base merges a run config under the answers (unattended runs)', (t) => {
   assert.deepEqual(config.run, { unattended: true });
   assert.deepEqual(config.delivery, { mode: 'ship-once' });
   assert.equal(config.gates.enforcement, 'fix');
+});
+
+test('--base keeps run.standIn, and a bad standIn value is refused before anything is written', (t) => {
+  const root = tmp(t);
+  const base = path.join(root, 'run-config.json');
+  fs.writeFileSync(base, JSON.stringify({ run: { unattended: true, conductor: 'pizza-party', standIn: { maxDispatches: 8 } } }));
+  const r = run(['--flow', 'B', '--project-root', root, '--base', base], { input: '{}' });
+  assert.equal(r.code, 0, r.err);
+  assert.deepEqual(parseJsonc(fs.readFileSync(r.json.config_path, 'utf8')).run, { unattended: true, conductor: 'pizza-party', standIn: { maxDispatches: 8 } });
+  for (const [standIn, message] of [
+    [{ maxDispatches: 51 }, /maxDispatches must be an integer from 0 to 50/],
+    [{ maxDispatches: 2.5 }, /maxDispatches must be an integer from 0 to 50/],
+    [{ enabled: 'no' }, /enabled must be true or false/],
+    [8, /run.standIn must be an object/],
+  ]) {
+    const other = tmp(t);
+    const bad = run(['--flow', 'C', '--project-root', other], { input: JSON.stringify({ run: { standIn } }) });
+    assert.equal(bad.code, 1, JSON.stringify(standIn));
+    assert.match(bad.err, message);
+    assert.ok(!fs.existsSync(path.join(other, 'bytheslice.config.json')));
+  }
+  const off = run(['--flow', 'C', '--project-root', tmp(t)], { input: JSON.stringify({ run: { standIn: { enabled: false, maxDispatches: 0 } } }) });
+  assert.equal(off.code, 0, off.err);
+});
+
+test('modelTiers accepts fable and refuses an unknown tier', (t) => {
+  const ok = run(['--flow', 'C', '--project-root', tmp(t)], { input: JSON.stringify({ modelTiers: { standInOperator: 'fable' } }) });
+  assert.equal(ok.code, 0, ok.err);
+  assert.equal(parseJsonc(fs.readFileSync(ok.json.config_path, 'utf8')).modelTiers.standInOperator, 'fable');
+  const bad = run(['--flow', 'C', '--project-root', tmp(t)], { input: JSON.stringify({ modelTiers: { implementer: 'gpt' } }) });
+  assert.equal(bad.code, 1);
+  assert.match(bad.err, /must be haiku, sonnet, opus or fable/);
 });
 
 test('a pasted credential is refused with external_credentials, nothing is written, and the value is never printed', (t) => {

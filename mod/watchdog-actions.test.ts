@@ -1,5 +1,5 @@
 // mod/watchdog-actions.test.ts
-// Unit tests for the stall responses: the first stall's row, toast, pane flag and hidden note; a repeat suppressed; a slice's second stall raising a pane-only HITL item; nothing messaged or stopped.
+// Unit tests for the stall responses: the first stall's row, toast, pane flag and hidden note; a repeat suppressed; a slice's second stall raising a pane-only HITL item (a ledger note under run.unattended); nothing messaged or stopped.
 
 import { expect, mock, test } from 'claude-code/testing'
 import type { AgentInfo } from 'claude-code'
@@ -124,6 +124,34 @@ test('a repeat of the same episode is suppressed; activity clears the flag; the 
   // A stall only the pane shows sends no native notification.
   expect(world.notifies).toEqual([])
   // Still no message to the agent and nothing stopped: the agent list is as it was.
+  expect(world.agents.map(entry => entry.status)).toEqual(['running'])
+})
+
+test('unattended: the slice second stall records a ledger note and a hidden note in place of a HITL item, with no notification', async ($, on) => {
+  const UNATTENDED = JSON.stringify({ run: { unattended: true }, pass: { watchdog: { idleMs: 20000, budgetsMs: { 'code-explorer': 30000 } } } })
+  const { world, clock, start } = stage(on, { checklist: CHECKLIST_FIXTURE, files: { [CONFIG]: UNATTENDED } })
+  const session = mock.session(on)
+  engineLoops(on, ['d1'])
+  on('tool.call', () => bashResult())
+  await start($)
+  await spawn($, 'bytheslice:code-explorer', 'P5 S5.5 discover: sleep')
+  world.agents = [explorer()]
+  await clock.set(START_MS + 2 * SCAN_MS)
+  // The first stall is unchanged: a row, a toast and the usual hidden note.
+  expect(evs(world, 'agent.stalled')).toHaveLength(1)
+  expect(notesOf(session)).toHaveLength(1)
+  await agentCall($, 'd1', { tool: 'Read', file_path: 'a.ts' })
+  await clock.advance(2 * SCAN_MS)
+  expect(evs(world, 'agent.stalled').map(row => (row.data as { n: number }).n)).toEqual([1, 2])
+  expect(evs(world, 'hitl.raised')).toEqual([])
+  const notes = evs(world, 'note').filter(row => (row.data as Record<string, unknown> | undefined)?.kind === 'agent-stalled')
+  expect(notes).toHaveLength(1)
+  expect(notes[0]).toMatchObject({ slice: '5.5', aid: 'd1' })
+  expect(notes[0]?.data).toMatchObject({ unattended: true, n: 2 })
+  expect(String((notes[0]?.data as Record<string, unknown> | undefined)?.text)).toContain('Stall 2 on Slice 5.5: agent code-explorer d1')
+  expect(world.notifies).toEqual([])
+  expect(notesOf(session)).toHaveLength(2)
+  expect(notesOf(session).at(-1)).toContain('skills/pizza-party/references/decision-routing.md')
   expect(world.agents.map(entry => entry.status)).toEqual(['running'])
 })
 

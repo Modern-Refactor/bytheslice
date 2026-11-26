@@ -26,7 +26,7 @@ This skill ships as a **standalone, operator-invoked** command in its first slic
 
 `haltOn` does not fit here: `/pizza-party` never pauses after its interview. A walk verdict instead resolves like any other would-be stop under its no-stop rule:
 - `verdict: broken`: one fix through `/special-order` (a new slice covering the top gaps), baked before the next pie; still broken, record it under **Deferred** in the order ticket and continue.
-- `verdict: drifted`: record the top gaps under **Decisions made without you** and continue.
+- `verdict: drifted`: record the top gaps under the ticket's **Decided by the team** and continue.
 - `verdict: clean`: one **Progress** line.
 
 **Skill changes:**

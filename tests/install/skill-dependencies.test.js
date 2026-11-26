@@ -1,5 +1,5 @@
 // tests/install/skill-dependencies.test.js
-// Holds the skills-only installer to the files a skill links inside another skill: installing special-order also installs sell-slice, cook-pizzas and setup-shop, open-the-shop brings sell-slice for its script-contract.md reference, every ../<skill>/<file> link in a SKILL.md (a peer's SKILL.md aside) resolves inside the installed set, and only the requested skills get command shims.
+// Holds the skills-only installer to the files a skill links inside another skill: installing special-order also installs sell-slice, cook-pizzas and setup-shop, open-the-shop brings sell-slice for its script-contract.md reference, every ../<skill>/<file> link in a SKILL.md (a peer's SKILL.md aside) resolves inside the installed set, only the requested skills get command shims, and pizza-party brings its own stand-in-operator agent.
 'use strict';
 
 const test = require('node:test');
@@ -88,6 +88,24 @@ test('a skills-only install of special-order writes the dispatched agent files a
     const shims = fs.readdirSync(path.join(dir, 'commands')).sort();
     const own = resolveCommandsForSkills(root, ['skills/special-order']).map(rel => path.basename(rel)).sort();
     assert.deepEqual(shims, own);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a skills-only install of pizza-party writes its own stand-in-operator agent and the decision-routing reference', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bts-skills-'));
+  const log = console.log;
+  console.log = () => {};
+  try {
+    await runInstallerCli(['--mode', 'skills', '--skill', 'pizza-party', '--skills-dir', dir]);
+  } finally {
+    console.log = log;
+  }
+  try {
+    for (const rel of ['skills/pizza-party/agents/stand-in-operator.md', 'skills/pizza-party/references/decision-routing.md']) {
+      assert.ok(fs.existsSync(path.join(dir, rel)), `${rel} was not installed`);
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

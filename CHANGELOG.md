@@ -16,6 +16,39 @@ All notable changes to **🍕 ByTheSlice** are tracked here, slice by slice. The
 
 ---
 
+## [7.2.0] - 2026-11-25
+
+**`/pizza-party` runs fully on its own.** The operator answers the interview once and reviews at the end. Technical calls are settled by the team; business calls get a reversible default at once and are weighed by a new Fable stand-in operator, then listed under **Your call** in the final report with how to change each one. Nothing mid-run pings the operator.
+
+### Added
+
+- **The stand-in operator, agent 29.** `bytheslice:stand-in-operator` (`skills/pizza-party/agents/stand-in-operator.md`, Fable, high effort, read-only: `Read`, `Glob`, `Grep`, no git writes) answers a batch of open questions the way the operator would, from the ticket's Brief, Answers and Acceptance. It returns one answer per question (class, decision, reversible, how to change, a one-clause rationale, confidence, whether it overrides the provisional default, and `defer` only when no option is both safe and reversible) plus a rank of the business answers, highest impact first. It never asks the human, never approves a destructive operation on anything shared the operator did not name, and never invents a credential. Registered in `.claude-plugin/plugin.json` and `DEFAULT_ROLES` (`'stand-in-operator': ['fable']`); a skills-only install of `pizza-party` brings it.
+- **The Fable tier.** `fable` joins the model tiers, ranked above opus (`haiku`, `sonnet`, `opus`, `fable`) in `mod/policy.ts`, `skills/setup-shop/scripts/write-config.js` and the model-tier guide. The opus-at-medium rule is unchanged.
+- **Decision routing, one source.** [`skills/pizza-party/references/decision-routing.md`](skills/pizza-party/references/decision-routing.md) sorts every would-be question into technical (the rule table decides, logged under **Decided by the team**, no agent dispatch), business (the reversible default rule: cheapest to undo, outside exposure off by default, nothing sent to real people, the least data that meets the brief; reviewed under **Your call**) and never decided (a destructive operation on anything shared is skipped, credentials are never invented). Every skill that writes the order ticket points to it.
+- **The stand-in is dispatched only when needed.** Four triggers: a business question the brief and Answers leave open; a `/sell-pie` approval the Answers do not cover; a technical question with no recommended option, or two that fit equally; a stuck-slice replan that would drop or change an Exit criterion or Acceptance line. Never for a call the rule table settles. Non-blocking questions queue with their provisional default already applied (work never waits) and go out in one dispatch per phase boundary, before the next phase reads that phase's output, and once per pie boundary; a blocking question dispatches at once with the whole queue.
+- **A stand-in budget.** `run.standIn.maxDispatches` (default 8, 0 to 50) caps dispatches for the run; past it the rule table plus the reversible default resolve the rest, each line marked `no stand-in: budget spent`. `run.standIn.enabled: false` turns the stand-in off. The `/pizza-party` run config writes `"standIn": { "maxDispatches": 8 }` under `run`, and `write-config.js` validates it.
+- **The run record counts the new sections.** `scripts/pizza-party.js record` adds `yourCall`, `teamDecisions`, `waiting` (0 at the end of a finished run) and `standInDispatches` (counted from the kitchen activity log's agent starts and the ledger's `slice.rollup` per-role counts, the larger of the two, role names canonicalized as the kitchen reads them). `decisions` stays the total, so the `runs` table still compares with older runs; the table gains a `Your call` column.
+
+### Changed
+
+- **New order ticket sections.** `docs/pizza-party/order.md` now has **Your call** (`- <phase> · <decision> · default: <what was applied> · to change: <how> · <why>`, with ` · stand-in` or ` · no stand-in: budget spent`, ordered highest impact first at the end), **Decided by the team** (the old decision line, unchanged) and **Waiting on the stand-in** (`- <id> · <phase> · <question> · provisional: <default> · blocking: yes|no`, empty when the run ends) in place of **Decisions made without you**. `cook-pizzas`, `create-menu`, `special-order`, `setup-shop`, `final-quality-check` and `open-the-shop` record technical picks under **Decided by the team** and queue business ones.
+- **The final report leads with Your call.** `/pizza-party` Phase 9 lists every business default applied, numbered, with how to change it, then the team decision count; the return contract gains `your_call`, `team_decisions` and `stand_in_dispatches` (`decisions` stays the total). The completion checklist adds an empty queue and every business decision under Your call.
+- **The approval batch no longer defers what a default covers.** Under `/pizza-party`, an approval the interview did not answer that is reversible and on a resource the run itself created (a migration on its own new schema, seed data in its own database, a size exception) is applied and recorded; an irreversible item, or one on anything shared, still defers; the rest goes to the stand-in as a blocking dispatch. A slice defers only when the stand-in returns `defer: true`, or the budget is spent and the item is not reversible. A business `needs_human` from an agent gets its reversible default and joins the queue instead of deferring the slice.
+- **`/set-display-case` no longer bubbles under unattended runs** for a missing brief (it uses the ticket's Look and Brief) or an unreadable bundle (it falls back to brief-first mode); both are recorded. Token values stay technical; a brand call beyond the Look answer is queued as business. It keeps writing "Decisions made without review" in `docs/design-system.md` and adds ticket lines when a ticket exists.
+- **The script contract routes exit 2.** On an unattended run a script's `needs_human` is routed per decision-routing.md instead of "the skill's own defer rule" (`skills/sell-slice/references/script-contract.md`).
+- **The Pass stays quiet under unattended runs.** When `run.unattended` is true in `bytheslice.config.json`, the fix-loop cap (`mod/checks-git.ts`) and the watchdog's second-stall alert (`mod/watchdog-actions.ts`) record a ledger `note` instead of opening a HITL item, send no native notification, and tell the model to follow the unattended defer rule instead of asking in chat. The `fix-loop-cap` warning still fires. Interactive runs are unchanged.
+
+### Fixed
+
+- **Ticket headings match whole.** `ticketCount` matched a `## <heading>` as a prefix, so a section whose name starts another's would have been counted as it. It now matches the whole heading (trailing spaces and a CRLF line end allowed, regex characters literal).
+
+### Migrating from 7.1.0
+
+- **Old tickets still count.** A ticket with `## Decisions made without you` is read as team decisions by resume and by `record`; a run resuming on one adds the three new sections and writes new lines there.
+- **Restart in-flight chats after upgrading** so Claude Code loads the new agent.
+
+---
+
 ## [7.1.0] - 2026-11-25
 
 **The agent roster drops from 42 to 28.** Fifteen mechanical agents become five zero-dependency scripts, five installers become one `scaffold-writer`, and `framework-detector` folds into `scaffold-discovery`. The work is unchanged and costs no model tokens where a script does it; old names still resolve through the alias table.

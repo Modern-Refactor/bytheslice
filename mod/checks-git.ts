@@ -1,11 +1,11 @@
 // mod/checks-git.ts
-// Pass checks that warn and never block: a fix-attempter (or ci-fix-attempter) past its cap of 3, which also opens a HITL inbox item, and a git commit or push on main.
+// Pass checks that warn and never block: a fix-attempter (or ci-fix-attempter) past its cap of 3, which also opens a HITL inbox item (a ledger note instead under run.unattended), and a git commit or push on main.
 
 import { atom, read, update } from 'claude-code'
 import type { AgentSpawnInput, EngineInterface } from 'claude-code'
 
-import { gitIntent, labelOf } from './capture.ts'
-import { checksOn, noteModel } from './checks.ts'
+import { gitIntent, labelOf, record } from './capture.ts'
+import { UNATTENDED_ROUTING, checksOn, isUnattended, noteModel } from './checks.ts'
 import type { Finding } from './checks.ts'
 import { raiseHitl } from './hitl.ts'
 import { CI_FIX_CAP, FIX_CAP, WORKFLOW_A_STEPS, findSlice, stepOf } from './ledger-projection.ts'
@@ -126,11 +126,27 @@ export function fixCapNote(id: string): string {
   return `The Pass opened HITL ${id} for the fix cap: ask the operator in chat, and when they answer call bts_hitl with { id: "${id}", answer }. Nothing was blocked.`
 }
 
+/** What an unattended fix cap records: the loop past its cap, and that no HITL item was opened. Pure. */
+export function fixCapUnattendedText(spawn: FixSpawn): string {
+  return spawn.kind === 'fix'
+    ? `Slice ${spawn.key} reached fix-attempter attempt ${spawn.attempt}, past the cap of ${FIX_CAP}; the run is unattended, so the Pass opened no HITL item and the cap does not rise.`
+    : `Pie ${spawn.key} reached ci-fix-attempter round ${spawn.attempt}, past the cap of ${CI_FIX_CAP}; the run is unattended, so the Pass opened no HITL item and the cap does not rise.`
+}
+
+/** The hidden note an unattended fix cap sends instead of a HITL id. Pure. */
+export function fixCapUnattendedNote(spawn: FixSpawn): string {
+  return `The Pass recorded a fix-cap note in the ledger: ${fixCapUnattendedText(spawn)} ${UNATTENDED_ROUTING} Nothing was blocked.`
+}
+
 /**
  * After a fix spawn past its cap started and its warning was reported: opens
  * one HITL inbox item for its loop (`source: 'pass'`, category `other`, asked
  * in chat) unless one is open, and tells the model its id in a hidden note to
  * the loop that spawned it. Nothing is blocked. Resolves the item's id, or null.
+ * Under `run.unattended` nobody can answer: it records one `note` row
+ * (`kind: 'fix-loop-cap'`, `unattended: true`) per loop and attempt instead,
+ * sends no native notification, and the hidden note points at the unattended
+ * routing. Resolves null then.
  */
 export async function raiseFixCap(
   $: EngineInterface,
@@ -146,6 +162,16 @@ export async function raiseFixCap(
     item => item.kind === FIX_CAP_KIND && item.slice === slice && (slice !== null || item.pie === pie),
   )
   if (open) return open.id
+  if (await isUnattended($)) {
+    await record($, {
+      ev: 'note',
+      ...(Number.isNaN(pie) ? {} : { pie }),
+      ...(slice === null ? {} : { slice }),
+      data: { kind: FIX_CAP_KIND, unattended: true, loop: spawn.kind, attempt: spawn.attempt, text: fixCapUnattendedText(spawn) },
+    })
+    await noteModel($, fixCapUnattendedNote(spawn), parent)
+    return null
+  }
   const raised = await raiseHitl($, {
     category: 'other',
     question: fixCapQuestion(spawn),

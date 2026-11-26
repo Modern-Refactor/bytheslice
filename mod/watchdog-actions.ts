@@ -1,11 +1,11 @@
 // mod/watchdog-actions.ts
-// What the Pass does about a stall, warn-only: the first time a ledger row, a toast, a pane flag and a hidden note to the main conversation; a slice's second stall raises a HITL inbox item instead. Nothing is messaged or stopped.
+// What the Pass does about a stall, warn-only: the first time a ledger row, a toast, a pane flag and a hidden note to the main conversation; a slice's second stall raises a HITL inbox item instead (a ledger note and a hidden note under run.unattended). Nothing is messaged or stopped.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
 import { record } from './capture.ts'
-import { noteModel } from './checks.ts'
+import { UNATTENDED_ROUTING, isUnattended, noteModel } from './checks.ts'
 import { raiseHitl } from './hitl.ts'
 import type { PassAgentMark, PassProjection, PassSeen, PassStalls } from './types'
 import type { Stall } from './watchdog.ts'
@@ -60,6 +60,23 @@ export function stallQuestion(stall: StallFacts, slice: string | null, n: number
   )
 }
 
+/** What an unattended repeat stall records in place of a HITL question. */
+export function stallUnattendedText(stall: StallFacts, slice: string | null, n: number): string {
+  const where = slice === null ? '' : ` on Slice ${slice}`
+  return (
+    `Stall ${n}${where}: ${stallWho(stall)} has run ${minutes(stall.runningMs)} with no tool activity for ` +
+    `${minutes(stall.idleMs)}; the run is unattended, so the Pass opened no HITL item and stopped nothing.`
+  )
+}
+
+/** The hidden note an unattended repeat stall sends in place of a HITL item. */
+export function stallUnattendedNote(stall: StallFacts, slice: string | null, n: number): string {
+  return (
+    `The Pass watchdog recorded a stall note in the ledger: ${stallUnattendedText(stall, slice, n)} ` +
+    `Check the agent, send it a message or stop it yourself. ${UNATTENDED_ROUTING}`
+  )
+}
+
 /**
  * Which stalls are new episodes, and the stall book after them. An agent whose
  * last flag judged the same `lastT` is the same episode and is skipped; a new
@@ -110,8 +127,11 @@ function toast($: EngineInterface, text: string): void {
  * Responds to each new stall episode: one `agent.stalled` ledger row `{ aid,
  * role, runningMs, idleMs, n }`; the first for its slice a toast and a hidden
  * note to the main conversation, a later one a HITL inbox item in place of
- * the note (one open item per slice). No message goes to the agent and
- * nothing is stopped. Resolves the steps taken.
+ * the note (one open item per slice). Under `run.unattended` that later
+ * one is a `note` row (`kind: 'agent-stalled'`, `unattended: true`) and a
+ * hidden note pointing at the unattended routing instead: no HITL item and
+ * no native notification. No message goes to the agent and nothing is
+ * stopped. Resolves the steps taken.
  */
 export async function respondToStalls($: EngineInterface, stalls: readonly Stall[], now: number): Promise<StallStep[]> {
   const marks: Record<string, PassAgentMark> = await read($, agentsAtom).catch(() => ({}))
@@ -151,6 +171,17 @@ export async function respondToStalls($: EngineInterface, stalls: readonly Stall
     const open = (projection?.hitl?.open ?? []).some(item => item.kind === STALL_KIND && slice !== null && item.slice === slice)
     if (open) {
       toast($, stallToast(stall, slice))
+      continue
+    }
+    if (await isUnattended($)) {
+      await record($, {
+        ev: 'note',
+        ...(pie === null || Number.isNaN(pie) ? {} : { pie }),
+        ...(slice === null ? {} : { slice }),
+        aid: stall.aid,
+        data: { kind: STALL_KIND, unattended: true, n: step.n, text: stallUnattendedText(stall, slice, step.n) },
+      })
+      await noteModel($, stallUnattendedNote(stall, slice, step.n), null)
       continue
     }
     await raiseHitl($, {

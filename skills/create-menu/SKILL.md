@@ -25,7 +25,7 @@ The PRD it produces feeds the next step (`/cook-pizzas`), but that handoff is a 
 When `bytheslice.config.json` sets `run.unattended: true` (`/pizza-party` does), nothing in this skill waits on a human; the operator accepted that risk by launching the run. Interactive behavior is unchanged when the key is absent.
 
 1. **Read the order ticket first.** Before Step 1, read `docs/pizza-party/order.md`: its **Brief** is the project brief, and its **Answers** (host, database, auth, look, and the extra interview questions) answer every clarifying question they cover.
-2. **Anything the ticket does not cover** takes the recommended option. Append one line per such pick to the ticket's "Decisions made without you" section (`- create-menu · <what was decided> · <why, in a clause>`), never to **Answers**. The pick also lands in PRD Section 6 like any plan-mode answer.
+2. **Anything the ticket does not cover** takes the recommended option, recorded per `skills/pizza-party/references/decision-routing.md`, never in **Answers**: a technical pick under **Decided by the team** (`- create-menu · <what was decided> · <why, in a clause>`), a business one (users, roles, data kept, features, pricing, naming) under **Waiting on the stand-in** with the pick applied as the provisional default. The pick also lands in PRD Section 6 like any plan-mode answer.
 3. **Providers come only from the ticket.** Host, database, auth and every other service are the ones the **Answers** name; a service the app needs that the ticket does not name gets a local option (see `project-defaults.md`), recorded as a decision.
 4. **The reviewer loop never escalates.** After 2 `revise` iterations, keep the best draft, list every open reviewer item in Section 6 as `[TBD-ASSUMPTION]` (or `[TBD-DEFER]`), and continue. Never `needs_human`.
 
@@ -210,7 +210,7 @@ After writing the PRD file and completing the review loop, end the response with
 
 ## Completion Checklist
 
-- [ ] Plan-mode gate completed (3 to 7 questions asked and answered; unattended: answered from the ticket or by recommended option, each pick recorded under "Decisions made without you")
+- [ ] Plan-mode gate completed (3 to 7 questions asked and answered; unattended: answered from the ticket or by recommended option, each pick recorded per decision-routing.md)
 - [ ] Architecture conditional evaluated and documented in Section 4
 - [ ] All 8 sections (0 to 7) present in the output PRD
 - [ ] No Linear references in output

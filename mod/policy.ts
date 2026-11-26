@@ -42,6 +42,7 @@ export const DEFAULT_ROLES: Readonly<Record<string, readonly string[]>> = {
   'slice-tester': ['sonnet'],
   'slice-verifier': ['sonnet'],
   'stage-planner': ['opus'],
+  'stand-in-operator': ['fable'],
   'state-illustrator': ['sonnet'],
   'token-expander': ['opus'],
   'ui-builder': ['sonnet'],
@@ -295,9 +296,9 @@ function watchdogOver(policy: PassPolicy, raw: unknown, overrides: PolicyOverrid
 
 const legacyOf = (picked: { legacy?: string[] }): { legacy?: string[] } => (picked.legacy === undefined ? {} : { legacy: picked.legacy })
 
-const TIERS = ['haiku', 'sonnet', 'opus']
+const TIERS = ['haiku', 'sonnet', 'opus', 'fable']
 
-/** The highest of several tiers (opus over sonnet over haiku). */
+/** The highest of several tiers (fable over opus over sonnet over haiku). */
 const highestTier = (tiers: string[]): string => tiers.reduce((best, tier) => (TIERS.indexOf(tier) > TIERS.indexOf(best) ? tier : best))
 
 /** Several tier lists for one role as one: every tier any of them allows; an empty list (no model check) wins. */
@@ -458,21 +459,39 @@ export async function recordOverrides($: EngineInterface, overrides: readonly Po
   return written
 }
 
+/** The text of `bytheslice.config.json` in `root` (the session's directory when left out), or null when it is missing or unreadable. Never throws. */
+export async function readConfigText($: EngineInterface, root?: string): Promise<string | null> {
+  try {
+    const dir = (root ?? (await $.session.cwd().catch(() => '.'))).replace(/\/$/, '')
+    const path = `${dir}/${CONFIG_PATH}`
+    return (await $.fs.exists(path)) ? await $.fs.read(path) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * True when config text (JSONC) sets `run.unattended: true`, the flag
+ * /pizza-party writes: nobody is watching, so the Pass records what it would
+ * have asked instead of opening a HITL item. Missing or malformed is false.
+ */
+export function unattendedFrom(text: string | null): boolean {
+  if (text === null) return false
+  try {
+    const config = JSON.parse(stripJsonc(text)) as unknown
+    return isObject(config) && isObject(config.run) && config.run.unattended === true
+  } catch {
+    return false
+  }
+}
+
 /**
  * Reads `bytheslice.config.json` in the session's directory, key `pass` (call it once per session): the
  * defaults when the file is missing, and when it cannot be read, with a log
  * line saying so. With `record`, each override not yet in the ledger becomes a note row.
  */
 export async function loadPolicy($: EngineInterface, options: { record?: boolean } = {}): Promise<PassPolicy> {
-  let text: string | null = null
-  try {
-    const cwd = (await $.session.cwd().catch(() => '.')).replace(/\/$/, '')
-    const path = `${cwd}/${CONFIG_PATH}`
-    text = (await $.fs.exists(path)) ? await $.fs.read(path) : null
-  } catch {
-    text = null
-  }
-  const read = readPolicy(text)
+  const read = readPolicy(await readConfigText($))
   if (read.problem !== null) {
     try {
       $.ui.log(`The Pass could not read ${CONFIG_PATH} (${read.problem}); its checks use the default policy.`)

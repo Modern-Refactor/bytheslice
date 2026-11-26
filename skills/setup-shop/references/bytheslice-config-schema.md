@@ -31,7 +31,7 @@ When two sources disagree, the higher-precedence source wins. The orchestrator l
 {
   // Override per-agent model tier. Falls back to plugin defaults
   // documented in references/model-tier-guide.md.
-  // Use the alias names: "haiku", "sonnet", "opus".
+  // Use the alias names: "haiku", "sonnet", "opus", "fable".
   "modelTiers": {
     "implementer": "opus",
     "codeReviewer": "opus",       // was qualityReviewer + specReviewer
@@ -48,7 +48,8 @@ When two sources disagree, the higher-precedence source wins. The orchestrator l
     "masterChecklistSynthesizer": "opus",
     "stagePlanner": "opus",       // was complexityAssessor + stageDecomposer
     "scaffoldDiscovery": "opus",
-    "retrospectiveReviewer": "opus"
+    "retrospectiveReviewer": "opus",
+    "standInOperator": "fable"    // /pizza-party only, dispatched rarely
   },
 
   // Per-stage shape preferences for cook-pizzas + sell-slice.
@@ -113,7 +114,8 @@ When two sources disagree, the higher-precedence source wins. The orchestrator l
 
   // Nobody is watching: skills decide, record and continue instead of asking. /pizza-party sets it.
   "run": {
-    "unattended": false
+    "unattended": false,
+    "standIn": { "enabled": true, "maxDispatches": 8 }  // /pizza-party's stand-in operator
   },
 
   // Which MCPs the project has installed. Read by sell-slice (frontend pipeline),
@@ -168,7 +170,7 @@ When two sources disagree, the higher-precedence source wins. The orchestrator l
 
 ### `modelTiers`
 
-Maps agent name → tier alias. Agent names use camelCase (e.g. `codeReviewer`, `sliceVerifier`). Values must be one of `"haiku" | "sonnet" | "opus"`. Unknown agent names are ignored (with a one-line warning at session start).
+Maps agent name → tier alias. Agent names use camelCase (e.g. `codeReviewer`, `sliceVerifier`). Values must be one of `"haiku" | "sonnet" | "opus" | "fable"` (`fable` ranks above `opus`). Unknown agent names are ignored (with a one-line warning at session start).
 
 The v5 verification agents are `sliceTester` (independent behavioral tester) and `sliceVerifier` (collapsed static-gate verifier). See [`model-tier-guide.md`](./model-tier-guide.md) for the full per-agent table.
 
@@ -188,7 +190,7 @@ The v5 verification agents are `sliceTester` (independent behavioral tester) and
 
 **Retired keys only raise.** A retired key may only raise the new agent's tier above its default, never lower it: `specReviewer: "sonnet"` alone leaves `codeReviewer` on `opus`, and `stageDecomposer: "sonnet"` leaves `stagePlanner` on `opus`, while `designCritic: "opus"` raises `uiReviewer` from `sonnet` to `opus`. A retired key that would lower the tier is ignored, and the Pass records one `policy-override` note with `ignored: true`. To choose a lower tier, use the new name: a key under the new name sets any tier.
 
-Two rules settle a clash. A key under the new name always wins over every retired key for that agent. Two retired keys that map to one agent give the **higher tier** (`opus` over `sonnet` over `haiku`) before the raise-only rule applies, and the Pass records one `policy-override` note for the agent, listing the retired keys it read under `legacy`. The same rules apply to `pass.spawnPolicy.roles` (two retired lists give every tier either allows; a retired list only adds tiers above the role's highest one and keeps the role's own tiers allowed; an EMPTY retired list, such as `"quality-reviewer": []`, was a deliberate 6.x opt-out and still turns the model check off for the new agent, unless a key under the new name is set) and `pass.watchdog.budgetsMs` (a `discovery` budget gives `code-explorer` the longer of it and the ten-minute default; the longer of two wins; a `code-explorer` budget wins outright). Rename the keys when convenient; nothing breaks while they keep their old names.
+Two rules settle a clash. A key under the new name always wins over every retired key for that agent. Two retired keys that map to one agent give the **higher tier** (`fable` over `opus` over `sonnet` over `haiku`) before the raise-only rule applies, and the Pass records one `policy-override` note for the agent, listing the retired keys it read under `legacy`. The same rules apply to `pass.spawnPolicy.roles` (two retired lists give every tier either allows; a retired list only adds tiers above the role's highest one and keeps the role's own tiers allowed; an EMPTY retired list, such as `"quality-reviewer": []`, was a deliberate 6.x opt-out and still turns the model check off for the new agent, unless a key under the new name is set) and `pass.watchdog.budgetsMs` (a `discovery` budget gives `code-explorer` the longer of it and the ten-minute default; the longer of two wins; a `code-explorer` budget wins outright). Rename the keys when convenient; nothing breaks while they keep their old names.
 
 Why use this instead of the env vars: env vars override the tier *globally* (every agent typed `opus` becomes the same model). Config overrides individual agent assignments. They compose: env vars handle the alias resolution, the config picks which alias each agent uses.
 
@@ -284,7 +286,8 @@ Where the UI phase finds pre-built pages, blocks and components is [`ui-sources.
 
 ### `run`
 
-- **`unattended`** *(boolean, default `false`)* - nobody is watching. Skills take recommended answers, record each one in the order ticket (`docs/pizza-party/order.md`) or the skill's own decisions section, and continue: no skill returns `needs_human`. A would-be blocker defers the slice instead (row stays `[ ]` with `Status: deferred: <reason>`; under ship-once its commits move to a local `deferred/pie-N-sN.M` branch) and the run returns `complete_with_deferrals`. Fix caps never rise, slices still go through the bakers, and destructive operations on shared resources the operator did not name are skipped. `/pizza-party` sets it together with `delivery.mode: "ship-once"`; in `/sell-pie` and `/box-it-up` it takes effect only under ship-once.
+- **`unattended`** *(boolean, default `false`)* - nobody is watching. Skills take recommended answers, record each one in the order ticket (`docs/pizza-party/order.md`) or the skill's own decisions section, and continue: no skill returns `needs_human`. A would-be blocker defers the slice instead (row stays `[ ]` with `Status: deferred: <reason>`; under ship-once its commits move to a local `deferred/pie-N-sN.M` branch) and the run returns `complete_with_deferrals`. Fix caps never rise, slices still go through the bakers, and destructive operations on shared resources the operator did not name are skipped. `/pizza-party` sets it together with `delivery.mode: "ship-once"`; in `/sell-pie` and `/box-it-up` it takes effect only under ship-once. The Pass reads it too, on demand: under `unattended: true` a fix cap past 3 and a slice's second agent stall become ledger `note` rows instead of HITL inbox items, with no native notification, and the hidden note to the model points at the unattended routing ([decision-routing.md](../../pizza-party/references/decision-routing.md)); the `fix-loop-cap` warning still fires.
+- **`standIn`** *(object)* - the `/pizza-party` stand-in operator (`stand-in-operator`, on `fable`), which answers business questions the interview did not settle, batched once per phase or pie boundary. **`enabled`** *(boolean, default `true`)*: `false` resolves every question by the rule table and the reversible default rule, as 7.1.0 did. **`maxDispatches`** *(int 0 to 50, default `8`)*: past it the conductor resolves the rest the same way and marks each line `no stand-in: budget spent`. `write-config.js` refuses any other value. Routing, batching and the budget: [decision-routing.md](../../pizza-party/references/decision-routing.md).
 
 ### `mcps`
 

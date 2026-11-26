@@ -2,7 +2,7 @@
 
 The canonical Phased stack. Apply these unless a PRD explicitly overrides in section 0.1.
 
-**No vendor is a default.** Hosting, database, auth, email, payments and every other third-party service are **whatever the operator has authorized**: the providers named in the brief, the plan-mode answers, or (under `run.unattended: true`) the order ticket's **Answers** at `docs/pizza-party/order.md`. The vendors named below are examples of each category, listed alphabetically, never a recommendation. When nothing names a provider for a service the app needs, write the category in the PRD and tag the provider `[TBD-ASSUMPTION]` (interactive) or record the pick under the ticket's "Decisions made without you" (unattended), preferring a local option (SQLite, local auth, console email) over an unauthorized vendor.
+**No vendor is a default.** Hosting, database, auth, email, payments and every other third-party service are **whatever the operator has authorized**: the providers named in the brief, the plan-mode answers, or (under `run.unattended: true`) the order ticket's **Answers** at `docs/pizza-party/order.md`. The vendors named below are examples of each category, listed alphabetically, never a recommendation. When nothing names a provider for a service the app needs, write the category in the PRD and tag the provider `[TBD-ASSUMPTION]` (interactive) or record the pick under the ticket's **Decided by the team** (unattended), preferring a local option (SQLite, local auth, console email) over an unauthorized vendor.
 
 ---
 

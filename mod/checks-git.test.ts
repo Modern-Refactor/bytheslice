@@ -1,5 +1,5 @@
 // mod/checks-git.test.ts
-// Unit tests for the fix-loop cap (fix-attempter per slice, ci-fix-attempter per pie, plus its one HITL inbox item) and the main-branch check: they warn, and the spawn or command completes.
+// Unit tests for the fix-loop cap (fix-attempter per slice, ci-fix-attempter per pie, plus its one HITL inbox item, a ledger note under run.unattended) and the main-branch check: they warn, and the spawn or command completes.
 
 import { expect, mock, test } from 'claude-code/testing'
 
@@ -7,7 +7,7 @@ import { branchPie, fixKind, fixSpawnOf, judgeCommitOnMain, judgeFixCap } from '
 import { parseChecklist } from './checklist.ts'
 import { CHECKLIST_FIXTURE } from './fixtures/checklist.fixture.ts'
 import { projectLedger } from './ledger-projection.ts'
-import { ACTIVITY, HEAD, LEDGER, activityLine, bashResult, endTurn, engineLoops, ledgerLine, ledgerText, rowsOf, spawn, stage, status, warnsOf } from './testing.tsx'
+import { ACTIVITY, CWD, HEAD, LEDGER, activityLine, bashResult, endTurn, engineLoops, ledgerLine, ledgerText, rowsOf, spawn, stage, status, warnsOf } from './testing.tsx'
 
 const fixStart = (aid: string, slice = '5.1', t = 10, label?: string) =>
   activityLine({ t, sid: 's', ev: 'SubagentStart', agent: 'bytheslice:fix-attempter', aid, pie: 5, slice, ...(label ? { label } : {}) })
@@ -69,6 +69,50 @@ test('a fourth fix spawn adds exactly one HITL inbox item, asked in chat; a fift
     ['fix-loop-cap', '5.1'],
   ])
   expect(await status($)).toContain('Open HITL: 1')
+})
+
+test('unattended: a fourth fix spawn still warns, but records a ledger note in place of a HITL item and sends no notification', async ($, on) => {
+  const { world, start } = stage(on, { checklist: CHECKLIST_FIXTURE })
+  world.files[LEDGER] = ledgerText([failing()])
+  const session = mock.session(on)
+  engineLoops(on, ['f1', 'f2', 'f3', 'f4', 'f5'])
+  await start($)
+  // /pizza-party merges run.unattended into the config after the session started.
+  world.files[`${CWD}/bytheslice.config.json`] = '{\n  // JSONC\n  "run": { "unattended": true, "conductor": "pizza-party" },\n}'
+  for (const n of [1, 2, 3]) await spawn($, 'bytheslice:fix-attempter', `P5 S5.1 fix: attempt ${n}`)
+  const fourth = await spawn($, 'bytheslice:fix-attempter', 'P5 S5.1 fix: attempt 4')
+  expect(fourth.agentId).toBe('f4')
+  expect(warnsOf(world)).toEqual([['fix-loop-cap', '5.1']])
+  expect(rowsOf(world).filter(row => row.ev === 'hitl.raised')).toEqual([])
+  const notes = rowsOf(world).filter(row => row.ev === 'note' && (row.data as Record<string, unknown> | undefined)?.kind === 'fix-loop-cap')
+  expect(notes).toHaveLength(1)
+  expect(notes[0]).toMatchObject({ pie: 5, slice: '5.1' })
+  expect(notes[0]?.data).toMatchObject({ unattended: true, loop: 'fix', attempt: 4 })
+  expect(String((notes[0]?.data as Record<string, unknown> | undefined)?.text)).toContain('Slice 5.1 reached fix-attempter attempt 4, past the cap of 3')
+  expect(world.notifies).toEqual([])
+  const hidden = session
+    .appended()
+    .filter(row => row.origin.kind === 'plugin')
+    .map(row => row.message.content.map(block => (block.type === 'text' ? block.text : '')).join(''))
+  expect(hidden.at(-1)).toContain('skills/pizza-party/references/decision-routing.md')
+  expect(hidden.at(-1)).not.toContain('bts_hitl')
+  // A fifth attempt records its own note; still no HITL item and no notification.
+  await spawn($, 'bytheslice:fix-attempter', 'P5 S5.1 fix: attempt 5')
+  expect(rowsOf(world).filter(row => row.ev === 'note' && (row.data as Record<string, unknown> | undefined)?.kind === 'fix-loop-cap')).toHaveLength(2)
+  expect(rowsOf(world).filter(row => row.ev === 'hitl.raised')).toEqual([])
+  expect(world.notifies).toEqual([])
+  expect(await status($)).toContain('Open HITL: none')
+})
+
+test('run.unattended false or missing keeps the interactive HITL item', async ($, on) => {
+  const { world, start } = stage(on, { checklist: CHECKLIST_FIXTURE, files: { [`${CWD}/bytheslice.config.json`]: '{ "run": { "unattended": false } }' } })
+  world.files[LEDGER] = ledgerText([failing()])
+  engineLoops(on, ['f1', 'f2', 'f3', 'f4'])
+  await start($)
+  for (const n of [1, 2, 3, 4]) await spawn($, 'bytheslice:fix-attempter', `P5 S5.1 fix: attempt ${n}`)
+  expect(rowsOf(world).filter(row => row.ev === 'hitl.raised')).toHaveLength(1)
+  expect(rowsOf(world).filter(row => row.ev === 'note' && (row.data as Record<string, unknown> | undefined)?.kind === 'fix-loop-cap')).toEqual([])
+  expect(world.notifies).toHaveLength(1)
 })
 
 test('the activity log counts fix attempts made before this session', async ($, on) => {

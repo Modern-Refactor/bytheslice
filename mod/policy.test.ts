@@ -18,6 +18,7 @@ import {
   policyFrom,
   readPolicy,
   tierAllowed,
+  unattendedFrom,
 } from './policy.ts'
 import { CWD, HEAD, LEDGER, activeAt52, bashResult, engineLoops, ledgerLine, ledgerText, rowsOf, stage, warnsOf } from './testing.tsx'
 
@@ -35,7 +36,8 @@ const PROJECT = `{
 }`
 
 test('the defaults cover every role with one tier each and the four context markers', () => {
-  expect(Object.keys(DEFAULT_ROLES)).toHaveLength(28)
+  expect(Object.keys(DEFAULT_ROLES)).toHaveLength(29)
+  expect(DEFAULT_ROLES['stand-in-operator']).toEqual(['fable'])
   expect(Object.values(DEFAULT_ROLES).every(tiers => tiers.length === 1)).toBe(true)
   expect(DEFAULT_ROLES.implementer).toEqual(['opus'])
   expect(DEFAULT_ROLES['code-reviewer']).toEqual(['opus'])
@@ -48,6 +50,25 @@ test('the defaults cover every role with one tier each and the four context mark
   expect(DEFAULT_ROLES['ui-builder']).toEqual(['sonnet'])
   expect(DEFAULT_MARKERS).toEqual(['files_changed', 'diff --git', 'implementer returned', 'builder transcript'])
   expect(DEFAULT_POLICY).toMatchObject({ enabled: true, requireTester: 'ui-slices' })
+})
+
+test('fable is a tier above opus: modelTiers may set it, and a retired key may raise a role to it', () => {
+  expect(policyFrom({ modelTiers: { implementer: 'fable' } }).policy.roles.implementer).toEqual(['fable'])
+  expect(policyFrom({ modelTiers: { standInOperator: 'opus' } }).policy.roles['stand-in-operator']).toEqual(['opus'])
+  // A retired name only raises: fable is above opus, so qualityReviewer raises code-reviewer to it.
+  expect(policyFrom({ modelTiers: { qualityReviewer: 'fable' } }).policy.roles['code-reviewer']).toEqual(['fable'])
+  expect(tierAllowed('claude-fable-5-2', ['fable'])).toBe(true)
+  expect(tierAllowed('claude-opus-5-5', ['fable'])).toBe(false)
+})
+
+test('run.unattended reads true only when the config sets it to true', () => {
+  expect(unattendedFrom(null)).toBe(false)
+  expect(unattendedFrom('{ "run": { "unattended": true } }')).toBe(true)
+  expect(unattendedFrom('{\n  // JSONC\n  "run": { "unattended": true, },\n}')).toBe(true)
+  expect(unattendedFrom('{ "run": { "unattended": false } }')).toBe(false)
+  expect(unattendedFrom('{ "run": { "unattended": "yes" } }')).toBe(false)
+  expect(unattendedFrom('{ "run": true }')).toBe(false)
+  expect(unattendedFrom('not json')).toBe(false)
 })
 
 test('a project config overrides per role, replaces the markers and lists each change', () => {

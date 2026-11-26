@@ -405,7 +405,7 @@ For Flow C:
 - **Step 2.** Skip Group 1 and Group 2, Q-gates included. Write `bytheslice.config.json` from the run config file `/pizza-party` passed, merged over the recommended Group 2 defaults (the run config's keys win), always with `gates.enforcement: "fix"`: `node "<this-skill-directory>/scripts/write-config.js" --flow <B|C> --project-root <root> --answers <run config> --merge` (the recommended Group 2 answers are the template's own defaults, so the run config is the only answers file; its sections pass through as given). An existing `bytheslice.config.json` is merged the same way (`--merge`), never asked about.
 - **Step 3.** Skip Q-ci-cd-baseline: `/pizza-party` runs `/final-quality-check` itself in its Phase 5. Report `ci_cd_ready` only.
 - **Step 4** runs as usual (intake, then doctor).
-- Record each of these in the ticket's **Decisions made without you** and return without the next-step pointer's questions.
+- Record each of these in the ticket per `skills/pizza-party/references/decision-routing.md` (all technical: one line each under **Decided by the team**) and return without the next-step pointer's questions.
 
 ## HITL Handling
 
