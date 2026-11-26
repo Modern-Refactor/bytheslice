@@ -66,6 +66,8 @@ Under ship-once the whole app ships in one PR at the end, so the scaffold does n
 
 Each agent is a **registered plugin agent**: dispatch by type `bytheslice:<name>` (Agent tool `subagent_type`, or `Workflow` `agentType`), passing only the task inputs as the prompt. The files under `./agents/` carry the role prompt plus enforced model/effort/tools. Fallback (Cursor, or a host without plugin-agent registration): Read the file and dispatch it per [`loop-workflow-fallback-pattern.md`](../cook-pizzas/references/loop-workflow-fallback-pattern.md) "Agent shape on the fallback path": its frontmatter goes first as a header (model tier and effort, the normalized tool allowlist, the read-only line for an agent without write tools, the no-git-writes line), then its body, then the inputs; log one self-check line per dispatch in the run log.
 
+Old agent names met in a stage file, checklist or earlier chat message (for example `spec-reviewer`, `quality-reviewer`) mean the new agent and mode in [`../sell-slice/references/legacy-agent-names.md`](../sell-slice/references/legacy-agent-names.md).
+
 | Phase | Agent file | Model | Effort | Mode |
 |-------|-----------|-------|--------|------|
 | 0 | [agents/scaffold-discovery.md](agents/scaffold-discovery.md) | opus | medium | readonly |
@@ -157,7 +159,7 @@ Each sub-block dispatches its agent, waits for the structured return, and commit
 
 **Past Z, the sequence continues `A2` through `Z2`, then `A3` through `Z3`, and so on.** The digit is a generation counter, never an insertion marker: `A2` means the twenty-seventh block, not "a second block wedged next to A". Never reach for a numbered suffix before Z is actually used.
 
-After each sub-block that writes project files (A through E, and G), run a spec-compliance + code-quality review pass (reuse `sell-slice/agents/spec-reviewer.md` and `sell-slice/agents/quality-reviewer.md`). Fix findings before moving to the next sub-block. Sub-blocks F and H are exempt: F writes no project files, and H is a deterministic file write.
+After each sub-block that writes project files (A through E, and G), run one spec-compliance + code-quality review pass: one `bytheslice:code-reviewer` dispatch (reuse [`sell-slice/agents/code-reviewer.md`](../sell-slice/agents/code-reviewer.md), which covers both halves and has a scaffold sub-block section). Fix its `blocker` and `major` findings (reported at any confidence, with the score shown) before moving to the next sub-block; its `nit` findings never block and never trigger a re-review. Show one line per sub-block in the report: `code-reviewer <block>: <verdict>, filtered <filtered_out>` (nits below 80 confidence left out, never a stop). Sub-blocks F and H are exempt: F writes no project files, and H is a deterministic file write.
 
 #### Sub-block F: Accessibility discovery pass (shadscan)
 

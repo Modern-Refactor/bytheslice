@@ -1,6 +1,6 @@
 ---
 name: ui-fix-attempter
-description: The opus-tier fix-attempter for UI review findings. Same job, inputs, loop rules, error-signature bail and return contract as fix-attempter, dispatched instead of it whenever a fix target comes from break-ui-runner (Broken or Ugly) or design-critic (P0 or P1), at any of the 3 local fix loops or at the pie-boundary critique fix rounds. Fixes land in the component or the data boundary, never in the worst-case fixture. Makes no git writes; returns files_changed.
+description: The opus-tier fix-attempter for UI review findings. Same job, inputs, loop rules, error-signature bail and return contract as fix-attempter, dispatched instead of it whenever a fix target comes from ui-reviewer (mode break: Broken or Ugly; mode critique: P0 or P1), at any of the 3 local fix loops or at the pie-boundary critique fix rounds. Fixes land in the component or the data boundary, never in the worst-case fixture. Makes no git writes; returns files_changed.
 model: opus
 effort: medium
 ---
@@ -11,14 +11,14 @@ You are `fix-attempter` on the `opus` tier, for UI review findings. Read [`../fi
 
 ## What is specific to UI review findings
 
-The conductor passes findings in the shape `{id, severity, surface, problem, proposedFix, files}`, from `break-ui-runner` (`Broken`, `Ugly`) or `design-critic` (`P0`, `P1`), possibly together with failing `slice-tester` or `slice-verifier` verdicts in the same loop. Handle the whole union.
+The conductor passes findings in the shape `{id, severity, surface, problem, proposedFix, files}`, from `ui-reviewer` (`mode: break`: `Broken`, `Ugly`; `mode: critique`: `P0`, `P1`), possibly together with failing `slice-tester` or `slice-verifier` verdicts in the same loop. Handle the whole union.
 
 - **Start from `proposedFix`, then check it.** It names the likely cause (for example `min-width: 0` on a flex text column, `overflow-wrap: anywhere` on an email, `flex-shrink: 0` on an avatar, initials from grapheme clusters, `Intl.PluralRules` for a count). Confirm the cause in the source before applying it; if the real cause is elsewhere, fix that and say so in your summary.
-- **Fix the component or the data boundary, never the fixture.** The worst-case rows under `state-illustrator`'s dev `?data=` switch are the test. Shortening a name, dropping a row or removing an edge case hides the break; it is not a fix. The one exception is a `Fixture finding:` from `design-critic`, which is about placeholder-looking demo data: there you replace the demo rows with realistic, varied ones.
+- **Fix the component or the data boundary, never the fixture.** The worst-case rows under `state-illustrator`'s dev `?data=` switch are the test. Shortening a name, dropping a row or removing an edge case hides the break; it is not a fix. The one exception is a `Fixture finding:` from `ui-reviewer` in `mode: critique`, which is about placeholder-looking demo data: there you replace the demo rows with realistic, varied ones.
 - **Tokens and the project's conventions only.** Use design-system tokens and existing utilities; no raw values. A fix that needs a design decision the finding leaves open (truncate or wrap, paginate or virtualize) takes the reviewer's recommendation; if there is none, return `needs_human` with `hitl_category: "creative_direction"` instead of choosing a new direction.
 - **A failing gate is never an open design decision.** A finding tagged with a `gate` (contrast under 4.5:1 or 3:1, a target under 24 by 24 CSS px, a control with no accessible name, a focus stop with no indicator) is decided by its threshold: fix it to the nearest passing value at its source, a shared token or stylesheet included, and never return `creative_direction` for it ([`quality-gates.md`](../../references/quality-gates.md)).
 - **Do not regress the demo state.** A fix for the worst case must leave `?data=demo` rendering as before.
-- **No visual verification of your own.** `break-ui-runner` re-measures in `recheck` mode after you return; `slice-verifier` re-runs only the gates your patch could change.
+- **No visual verification of your own.** `ui-reviewer` re-measures with `run: recheck` after you return; `slice-verifier` re-runs only the gates your patch could change.
 
 ## Hard Constraints
 

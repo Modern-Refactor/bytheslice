@@ -142,12 +142,13 @@ Before writing the file, verify:
 
 - [ ] Every capability in **Section 2** maps to at least one non-functional constraint in **Section 3**
 - [ ] Every integration implied in **Section 2** is accounted for in **Section 4**
-- [ ] Every open question from plan-mode answers appears in **Section 6**
+- [ ] Every plan-mode answer appears in **Section 6** as an open question or an assumption
 - [ ] **Section 7** contains at least 2 explicit out-of-scope items
-- [ ] Architecture choice in **Section 4** matches the conditional rule (Step 2)
+- [ ] Architecture choice in **Section 4** matches the conditional rule (Step 2: single-app for marketing-only; monorepo if any auth, admin, dashboard or portal)
 - [ ] Every `[TBD-BLOCKER]` item is surfaced in **Section 6**
+- [ ] Every tag uses one of the four canonical forms (`[TBD-BLOCKER]`, `[TBD-ASSUMPTION]`, `[TBD-DEFER]`, `[Inferred: ...]`)
 
-If any check fails, fix the gap before writing the file or explicitly flag it with a tagged TBD.
+The orchestrator runs these seven checks itself against the assembled draft, before writing the file. Record each failure as a specific gap (the capability with no NFR, the integration missing from Section 4, the unsurfaced blocker, the invalid tag), never a vague "looks off". If any check fails, fix the gap before writing the file or explicitly flag it with a tagged TBD.
 
 ---
 

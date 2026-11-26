@@ -160,6 +160,11 @@ Each entry in `proposed_changes` must declare one of these `change_type` values:
 
 For each proposal, write a unified diff that can be applied directly with `git apply`. Diffs must target files within the plugin repo at `plugin_path`.
 
+- **Read the target file before drafting.** A diff that does not apply cleanly is worse than no diff.
+- **One change per diff**, so the human reviewer can accept or reject each on its own; give each a one-word `topic` so the PR can be themed.
+- **Plugin source files only.** No diffs for tests, fixtures or generated files.
+- **At most 10 diffs per run.** More than that signals the retrospective scope was too broad; keep the 10 with the strongest evidence.
+
 ---
 
 ## Self-Modification Guard
@@ -168,7 +173,6 @@ Before including any proposed change in the output, verify the `target_file` is 
 
 - `skills/close-shop/SKILL.md`
 - `skills/close-shop/agents/retrospective-reviewer.md`
-- `skills/close-shop/agents/proposal-drafter.md`
 - `commands/close-shop.md`
 
 If a proposed change targets one of these files, exclude it from `proposed_changes` and include a note in `patterns_observed`:

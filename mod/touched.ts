@@ -5,14 +5,20 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
 import { readRows } from './ledger.ts'
+import { canonicalRole } from './policy.ts'
 import { activeSlice } from './projection.ts'
 import type { LedgerRow, PassTouched, PassTouchedFile } from './types'
 
 const checklistAtom = atom({ plugin: 'bytheslice', key: 'pass.checklist' } as const, null)
 const touchedAtom = atom({ plugin: 'bytheslice', key: 'pass.touched' } as const, { slice: null, files: [], at: 0 })
 
-/** Roles whose edit after a verifier pass invalidates it. */
-export const BUILDERS: ReadonlySet<string> = new Set(['implementer', 'fix-attempter'])
+/**
+ * Roles whose edit after a verifier pass invalidates it: the agents that write
+ * slice files (the implementer and the frontend builders) and the fixers. Keyed
+ * by canonicalRole, so an edit under a retired name (`block-composer`) counts
+ * as the agent that replaced it.
+ */
+export const BUILDERS: ReadonlySet<string> = new Set(['implementer', 'fix-attempter', 'ui-fix-attempter', 'ui-builder', 'ux-layout-designer'])
 /** Edits within this long of the last refresh wait for the next pulse instead of running git again. */
 export const TOUCHED_REFRESH_MS = 2000
 /** Files the pane lists before it counts the rest. */
@@ -60,7 +66,7 @@ export function parseNumstat(text: string): Numstat {
 
 const roleOfRow = (row: LedgerRow): string => {
   const agent = row.data?.agent ?? row.agent
-  return typeof agent === 'string' && agent !== '' ? agent.slice(agent.lastIndexOf(':') + 1) : 'main'
+  return typeof agent === 'string' && agent !== '' ? canonicalRole(agent) : 'main'
 }
 
 /** The time of the slice's last slice-verifier pass, or null. */

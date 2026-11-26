@@ -120,7 +120,7 @@ test('a report the parser cannot read records overall unparsed; other agents rec
   engineLoops(on, ['agent-v', 'agent-d'])
   await start($)
   await spawn($, 'bytheslice:slice-verifier', 'P5 S5.2 verify: gates')
-  await spawn($, 'bytheslice:discovery', 'P5 S5.2 prep: recon')
+  await spawn($, 'bytheslice:code-explorer', 'P5 S5.2 prep: recon')
   await endTurn($, 'I ran out of time before the verdict.', 'agent-v')
   await endTurn($, '{"overall": "pass"}', 'agent-d')
   const rows = rowsOf(world)

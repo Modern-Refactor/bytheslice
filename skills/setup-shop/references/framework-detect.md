@@ -1,6 +1,6 @@
 # Framework Detection — Canonical Reference
 
-Single source of truth for which frontend stacks ByTheSlice supports, how to detect each one, and what their idiomatic paths look like. Every skill that branches on framework (setup-shop, set-display-case, library-route-scaffolder, layout-architect, library-entry-writer) reads this file and matches behavior to the table below — *do not duplicate detection logic in skill prose*.
+Single source of truth for which frontend stacks ByTheSlice supports, how to detect each one, and what their idiomatic paths look like. Every skill that branches on framework (setup-shop, set-display-case, library-route-scaffolder, ux-layout-designer, library-entry-writer) reads this file and matches behavior to the table below. *Do not duplicate detection logic in skill prose.*
 
 ## Supported stacks (v4.1)
 
@@ -76,7 +76,7 @@ For `/setup-shop` Step 1 Phase 2 (Q-bootstrap-stack):
 | `/setup-shop` Step 1 | Bootstrap scaffolder command (table above) |
 | `/set-display-case` Step 3 | CSS entry path (table above) |
 | `/set-display-case` Step 6 (library-route-scaffolder) | Route location, page-file extension, theme primitive |
-| `/sell-slice` Phase 4 frontend pipeline (layout-architect, library-entry-writer) | Page-file convention. **Bubble HITL for non-`next-app` stacks until per-framework templates land** (Tier L work) |
+| `/sell-slice` Phase 4 frontend pipeline (ux-layout-designer, library-entry-writer) | Page-file convention. **Bubble HITL for non-`next-app` stacks until per-framework templates land** (Tier L work) |
 | `/inspect-display` (platform-walker) | Already framework-aware; uses framework-specific route globs |
 | `/final-quality-check` (framework-detector) | Already framework-aware for E2E selection |
 

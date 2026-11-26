@@ -63,7 +63,7 @@ test('the main conversation and a subagent arm nothing and are told why', async 
   const { world, clock } = await team($, on)
   const main = await $.tool.call({ tool: WAKE, afterMs: 30000, note: 'x' } as never)
   expect(String(main.result)).toContain('not armed: bts_wake wakes a teammate of an agent team')
-  await spawn($, 'bytheslice:discovery', 'P5 S5.1 discover: map')
+  await spawn($, 'bytheslice:code-explorer', 'P5 S5.1 discover: map')
   const sub = await agentCall($, 'sub-1', { tool: WAKE, afterMs: 30000, note: 'x' })
   expect(String(sub.result)).toContain('The main conversation has ScheduleWakeup')
   const bad = await agentCall($, 'tm-5', { tool: WAKE, afterMs: 'soon' })

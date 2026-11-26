@@ -65,10 +65,12 @@ test('a tester prompt with files_changed warns builder-context, and the agent st
 
 test('a re-verify slice-verifier prompt with the fix files_changed, and reviewers with the builder output, are no builder context', async ($, on) => {
   const { world, start } = stage(on, { checklist: CHECKLIST_FIXTURE })
-  engineLoops(on, ['v2', 's1', 'q1', 't2', 'v3'])
+  engineLoops(on, ['v2', 'c1', 's1', 'q1', 't2', 'v3'])
   await start($)
   const reverify = 'Prior verdict: {...}\nfiles_changed:\n  - path: app/globals.css\n    rationale: darken --error\ndiff --git a/app/globals.css b/app/globals.css'
   await spawn($, 'bytheslice:slice-verifier', 'P5 S5.3 verify: re-verify loop 1', { prompt: reverify })
+  await spawn($, 'bytheslice:code-reviewer', 'P5 S5.3 review: task 1', { prompt: 'implementer returned:\nfiles_changed:\n  - path: mod/a.ts\ndiff --git a/mod/a.ts b/mod/a.ts' })
+  // The retired reviewer names are judged as code-reviewer, with its expected markers.
   await spawn($, 'bytheslice:spec-reviewer', 'P5 S5.3 review: spec', { prompt: 'implementer returned:\nfiles_changed:\n  - path: mod/a.ts' })
   await spawn($, 'bytheslice:quality-reviewer', 'P5 S5.3 review: quality', { prompt: 'files_changed: ["mod/a.ts"]' })
   // A tester told to list the seeds it writes in files_changed is an instruction, not a pasted return.
@@ -83,10 +85,25 @@ test('a reviewer prompt past 20,000 characters warns builder-context; an impleme
   const { world, start } = stage(on, { checklist: CHECKLIST_FIXTURE })
   engineLoops(on, ['q1', 'i1'])
   await start($)
-  await spawn($, 'bytheslice:quality-reviewer', 'P5 S5.3 review: quality', { prompt: 'x'.repeat(20001) })
+  await spawn($, 'bytheslice:code-reviewer', 'P5 S5.3 review: task 1', { prompt: 'x'.repeat(20001) })
   await spawn($, 'bytheslice:implementer', 'P5 S5.3 build: task 1', { prompt: `files_changed ${'y'.repeat(30000)}` })
   expect(warnsOf(world)).toEqual([['builder-context', '5.3']])
   expect(world.toasts[0]).toContain('it runs 20001 characters, past 20000')
+})
+
+test('code-reviewer and its retired names: the builder output is expected, the builder chat is builder context', () => {
+  const facts = { tool_use_id: 'toolu-9', model: 'claude-opus-5-5', description: 'P5 S5.3 review: task 1' }
+  const output = 'implementer returned:\nfiles_changed:\n  - path: mod/a.ts\ndiff --git a/mod/a.ts b/mod/a.ts'
+  for (const type of ['bytheslice:code-reviewer', 'bytheslice:spec-reviewer', 'bytheslice:quality-reviewer']) {
+    expect(judgeSpawn({ ...facts, subagentType: type, prompt: output }, DEFAULT_POLICY).findings).toEqual([])
+    const chat = judgeSpawn({ ...facts, subagentType: type, prompt: 'Here is the builder transcript: ...' }, DEFAULT_POLICY)
+    expect(chat.findings.map(f => [f.code, f.slice])).toEqual([['builder-context', '5.3']])
+    expect(chat.findings[0]?.text).toContain('code-reviewer')
+  }
+  // A spawn under a retired name is judged by its new role's tiers.
+  const sonnet = judgeSpawn({ ...facts, subagentType: 'bytheslice:spec-reviewer', model: 'sonnet', prompt: 'p' }, DEFAULT_POLICY)
+  expect(sonnet.findings.map(f => f.code)).toEqual(['model-policy'])
+  expect(sonnet.findings[0]?.text).toContain('code-reviewer was spawned on sonnet; the role table allows opus')
 })
 
 test('an unset model warns only at turn.complete, when the run landed on the wrong tier', async ($, on) => {
@@ -128,6 +145,13 @@ test('the pure parts: roles, given models, markers and the judgment', () => {
   expect(roleOf('bytheslice:slice-tester')).toBe('slice-tester')
   expect(roleOf('Explore')).toBe('Explore')
   expect(roleOf('other:implementer')).toBe('other:implementer')
+  // A retired name reads as the agent that replaced it; another plugin's agent of that name stays whole.
+  expect(roleOf('bytheslice:spec-reviewer')).toBe('code-reviewer')
+  expect(roleOf('quality-reviewer')).toBe('code-reviewer')
+  expect(roleOf('bytheslice:discovery')).toBe('code-explorer')
+  expect(roleOf('other:discovery')).toBe('other:discovery')
+  // A name the next roster change retires is still registered, so it is still its own role.
+  expect(roleOf('bytheslice:env-scanner')).toBe('env-scanner')
   expect(givenModel('inherit')).toBeNull()
   expect(givenModel(' ')).toBeNull()
   expect(givenModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6')
@@ -137,8 +161,8 @@ test('the pure parts: roles, given models, markers and the judgment', () => {
   expect(markerIn('"files_changed": ["a.ts"]', DEFAULT_POLICY.contextMarkers)).toBe('files_changed')
   expect(markerIn('files_changed: []', DEFAULT_POLICY.contextMarkers)).toBeNull()
   expect(markerIn('files_changed:\n  - a.ts', DEFAULT_POLICY.contextMarkers, ['files_changed'])).toBeNull()
-  const facts = { tool_use_id: 'toolu-1', prompt: 'p', subagentType: 'bytheslice:discovery', model: 'claude-opus-5-5' }
-  expect(judgeSpawn(facts, DEFAULT_POLICY)).toEqual({ findings: [], track: { role: 'discovery', given: 'claude-opus-5-5', parent: null, slice: null } })
+  const facts = { tool_use_id: 'toolu-1', prompt: 'p', subagentType: 'bytheslice:code-explorer', model: 'claude-opus-5-5' }
+  expect(judgeSpawn(facts, DEFAULT_POLICY)).toEqual({ findings: [], track: { role: 'code-explorer', given: 'claude-opus-5-5', parent: null, slice: null } })
   expect(judgeSpawn({ ...facts, model: 'haiku', description: 'P5 S5.4 prep: recon' }, DEFAULT_POLICY).findings[0]?.slice).toBe('5.4')
   expect(judgeSpawn({ ...facts, model: 'fable' }, DEFAULT_POLICY).findings.map(f => f.code)).toEqual(['model-policy'])
   expect(judgeSpawn({ ...facts, subagentType: 'general-purpose' }, DEFAULT_POLICY)).toEqual({ findings: [], track: null })

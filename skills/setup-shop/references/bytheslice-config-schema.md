@@ -34,26 +34,22 @@ When two sources disagree, the higher-precedence source wins. The orchestrator l
   // Use the alias names: "haiku", "sonnet", "opus".
   "modelTiers": {
     "implementer": "opus",
-    "qualityReviewer": "opus",
-    "specReviewer": "sonnet",
-    "discovery": "opus",
+    "codeReviewer": "opus",       // was qualityReviewer + specReviewer
+    "codeExplorer": "opus",       // was discovery + checklistCurator
     "sliceTester": "sonnet",      // v5, independent behavioral tester
     "sliceVerifier": "sonnet",    // v5, collapsed static-gate verifier
-    "checklistCurator": "sonnet",
-    "modernUxExpert": "sonnet",
-    "layoutArchitect": "sonnet",
-    "blockComposer": "sonnet",
-    "componentCrafter": "sonnet",
+    "uxLayoutDesigner": "sonnet", // was modernUxExpert + layoutArchitect
+    "uiBuilder": "sonnet",        // was blockComposer + componentCrafter
+    "uiReviewer": "sonnet",       // was breakUiRunner + designCritic
     "stateIllustrator": "sonnet",
     "tokenExpander": "opus",
     "bundleValidator": "sonnet",
     "compliancePreCheck": "sonnet",
     "envVerifier": "haiku",
     "prdReviewer": "sonnet",
-    "phasedPlanWriter": "opus",
-    "dbSchemaStageWriter": "opus",
+    "phasedPlanWriter": "opus",   // also writes the DB schema stage (was dbSchemaStageWriter)
     "masterChecklistSynthesizer": "opus",
-    "complexityAssessor": "opus",
+    "stagePlanner": "opus",       // was complexityAssessor + stageDecomposer
     "scaffoldDiscovery": "opus",
     "retrospectiveReviewer": "opus"
   },
@@ -175,9 +171,26 @@ When two sources disagree, the higher-precedence source wins. The orchestrator l
 
 ### `modelTiers`
 
-Maps agent name → tier alias. Agent names use camelCase (e.g. `qualityReviewer`, `sliceVerifier`). Values must be one of `"haiku" | "sonnet" | "opus"`. Unknown agent names are ignored (with a one-line warning at session start).
+Maps agent name → tier alias. Agent names use camelCase (e.g. `codeReviewer`, `sliceVerifier`). Values must be one of `"haiku" | "sonnet" | "opus"`. Unknown agent names are ignored (with a one-line warning at session start).
 
 The v5 verification agents are `sliceTester` (independent behavioral tester) and `sliceVerifier` (collapsed static-gate verifier). See [`model-tier-guide.md`](./model-tier-guide.md) for the full per-agent table.
+
+**Retired agent names still work.** A config written before the 7.0 roster change keeps its keys: each retired name sets the agent that replaced it (the Pass reads them through `LEGACY_AGENT_ALIASES` in `mod/policy.ts`, and `rules-loader` applies the same mapping when it resolves the tiers conductors dispatch with).
+
+| Retired key | Now sets |
+|---|---|
+| `specReviewer`, `qualityReviewer` | `codeReviewer` |
+| `breakUiRunner`, `designCritic` | `uiReviewer` (modes `break`, `critique`) |
+| `discovery`, `checklistCurator` | `codeExplorer` (modes `stage-recon`, `slice-scope`) |
+| `complexityAssessor`, `stageDecomposer` | `stagePlanner` (modes `extend`, `full`) |
+| `dbSchemaStageWriter` | `phasedPlanWriter` (mode `db-schema`) |
+| `modernUxExpert`, `layoutArchitect` | `uxLayoutDesigner` |
+| `blockComposer`, `componentCrafter` | `uiBuilder` |
+| `bootstrapRunner`, `proposalDrafter`, `consistencyChecker` | nothing (those agents were deleted; the key is ignored) |
+
+**Retired keys only raise.** A retired key may only raise the new agent's tier above its default, never lower it: `specReviewer: "sonnet"` alone leaves `codeReviewer` on `opus`, and `stageDecomposer: "sonnet"` leaves `stagePlanner` on `opus`, while `designCritic: "opus"` raises `uiReviewer` from `sonnet` to `opus`. A retired key that would lower the tier is ignored, and the Pass records one `policy-override` note with `ignored: true`. To choose a lower tier, use the new name: a key under the new name sets any tier.
+
+Two rules settle a clash. A key under the new name always wins over every retired key for that agent. Two retired keys that map to one agent give the **higher tier** (`opus` over `sonnet` over `haiku`) before the raise-only rule applies, and the Pass records one `policy-override` note for the agent, listing the retired keys it read under `legacy`. The same rules apply to `pass.spawnPolicy.roles` (two retired lists give every tier either allows; a retired list only adds tiers above the role's highest one and keeps the role's own tiers allowed; an EMPTY retired list, such as `"quality-reviewer": []`, was a deliberate 6.x opt-out and still turns the model check off for the new agent, unless a key under the new name is set) and `pass.watchdog.budgetsMs` (a `discovery` budget gives `code-explorer` the longer of it and the ten-minute default; the longer of two wins; a `code-explorer` budget wins outright). Rename the keys when convenient; nothing breaks while they keep their old names.
 
 Why use this instead of the env vars: env vars override the tier *globally* (every agent typed `opus` becomes the same model). Config overrides individual agent assignments. They compose: env vars handle the alias resolution, the config picks which alias each agent uses.
 
@@ -187,7 +200,7 @@ Default `6`. Lower = more, smaller stages. Upper bound `8` (above this stages wo
 
 ### `stages.targetFeatureStages`
 
-Default `"20-30"`, read as a **ceiling for large apps, never a target to pad toward**. With the key unset (or at the default), `stage-decomposer` right-sizes the roadmap to the PRD: a small brief (a private single-user tool, a handful of Section 2 features) gets few pies and few slices, and a pie of a small app may hold 1 or 2 slices. No filler slices, no shell and data split for a feature one slice holds, no pie invented to fill a count; only a count over 30 is reported `over`.
+Default `"20-30"`, read as a **ceiling for large apps, never a target to pad toward**. With the key unset (or at the default), `stage-planner` right-sizes the roadmap to the PRD: a small brief (a private single-user tool, a handful of Section 2 features) gets few pies and few slices, and a pie of a small app may hold 1 or 2 slices. No filler slices, no shell and data split for a feature one slice holds, no pie invented to fill a count; only a count over 30 is reported `over`.
 
 Set it to any other band (for example `"10-15"` or `"30-40"`) and it is an operator override: the splitter tunes its granularity until the count lands inside that band, and a count below it is reported `under`. Smaller numbers mean larger slices.
 
@@ -249,7 +262,7 @@ The escalations that stay: a fix that is destructive (`destructive_operation`), 
 
 Where the UI phase finds pre-built pages, blocks and components is [`ui-sources.md`](../../sell-slice/references/ui-sources.md): the operator's own registry preferences first, else the public shadcn registry directory (`https://ui.shadcn.com/r/registries.json`), then stock shadcn. `scripts/ui-sources.js` resolves the list.
 
-- **`registries`** *(array, default `[]`)* - the operator's own registries, searched in order before everything else, by `block-composer`, `component-crafter`, the implementer and `/set-display-case`. An entry is a namespace string (`"@magicui"`, any registry in the shadcn directory) or an object for a registry outside it: `name` (label), `catalog` (URL of a machine-readable catalog such as `llms.txt` or a registry meta JSON), `item` (install URL template with `{name}`), optional `theme` (an item installed first on a greenfield project, after which only its brand layer is set), optional `notes` (that registry's install rules). Installs use `yes n | npx shadcn@latest add "<item URL>" --yes`, never `--overwrite`. No registry is a plugin default; keep yours in `~/.bytheslice/defaults.json`:
+- **`registries`** *(array, default `[]`)* - the operator's own registries, searched in order before everything else, by `ui-builder`, the implementer and `/set-display-case`. An entry is a namespace string (`"@magicui"`, any registry in the shadcn directory) or an object for a registry outside it: `name` (label), `catalog` (URL of a machine-readable catalog such as `llms.txt` or a registry meta JSON), `item` (install URL template with `{name}`), optional `theme` (an item installed first on a greenfield project, after which only its brand layer is set), optional `notes` (that registry's install rules). Installs use `yes n | npx shadcn@latest add "<item URL>" --yes`, never `--overwrite`. No registry is a plugin default; keep yours in `~/.bytheslice/defaults.json`:
 
 ```jsonc
 {

@@ -59,6 +59,11 @@ test('the status ladder follows the latest signal from rows and activity', () =>
   rows.push(verdict(8, 'slice-verifier', 'pass'))
   expect(at()).toBe('verifying')
   expect(findSlice(projectLedger(rows, acts, C, 10), '5.3')?.status).toBe('queued')
+  // A UI fix shows as fixing too, after the verifier started again.
+  acts.push(start(9, 'slice-verifier', 'v2'))
+  expect(at()).toBe('verifying')
+  acts.push(start(10, 'ui-fix-attempter', 'u1'))
+  expect(at()).toBe('fixing')
   expect(statusOf(true, [{ t: 1, status: 'fixing' }])).toBe('done')
   expect(statusOf(false, [])).toBe('queued')
 })
@@ -191,4 +196,47 @@ test('the activity log is read rotated file first and a partial line is skipped'
   world.files[ACTIVITY] = `${activityLine(start(2, 'slice-tester', 't1', '5.1'))}{"t":3,"ev":"SubagentSt`
   await begin($)
   expect(await status($)).toContain('> 5.1 testing')
+})
+
+test('a ledger and activity log written under retired agent names project exactly as under the new names', () => {
+  // The same slice twice: once as the 6.x roster logged it, once as the new roster does.
+  const OLD_TO_NEW: Record<string, string> = {
+    discovery: 'code-explorer',
+    'checklist-curator': 'code-explorer',
+    'block-composer': 'ui-builder',
+    'component-crafter': 'ui-builder',
+    'spec-reviewer': 'code-reviewer',
+    'quality-reviewer': 'code-reviewer',
+    'design-critic': 'ui-reviewer',
+  }
+  const script = (name: (old: string) => string): ActivityRow[] => [
+    start(1, name('discovery'), 'a1'),
+    start(2, name('checklist-curator'), 'a2'),
+    stop(3, 'a1'),
+    stop(3, 'a2'),
+    start(4, name('block-composer'), 'a3'),
+    start(5, name('component-crafter'), 'a4'),
+    start(6, 'implementer', 'a5'),
+    start(7, name('spec-reviewer'), 'a6'),
+    start(8, name('quality-reviewer'), 'a7'),
+    start(10, 'slice-tester', 'a8'),
+    start(12, 'fix-attempter', 'a9'),
+    start(13, 'ui-fix-attempter', 'a10'),
+    start(14, name('design-critic'), 'a11'),
+    { t: 15, sid: 's', ev: 'PostToolUse', agent: `bytheslice:${name('spec-reviewer')}`, aid: 'a6', pie: 5, slice: '5.2', tok: 400, ms: 2000 },
+  ]
+  const rows: LedgerRow[] = [row(0, 'slice.started', '5.2'), verdict(11, 'slice-tester', 'fail')]
+  const oldActs = script(old => old)
+  const newActs = script(old => OLD_TO_NEW[old] ?? old)
+  expect(projectLedger(rows, oldActs, C, 20)).toEqual(projectLedger(rows, newActs, C, 20))
+  const rolled = rollup(oldActs, '5.2', verifyStartOf(rows, '5.2'))
+  expect(rolled).toEqual(rollup(newActs, '5.2', verifyStartOf(rows, '5.2')))
+  // The two reviewer starts count as two code-reviewer dispatches; both fixers count as Workflow B loops.
+  expect(rolled.agents['code-reviewer']).toEqual({ count: 2, tok: 400, ms: 2000 })
+  expect(rolled.agents['code-explorer']?.count).toBe(2)
+  expect(rolled.agents['ui-builder']?.count).toBe(2)
+  expect(rolled.agents['spec-reviewer']).toBeUndefined()
+  expect(rolled.fixLoops).toBe(2)
+  expect(liveAgents(oldActs, 20).map(agent => agent.role)).toEqual(liveAgents(newActs, 20).map(agent => agent.role))
+  expect(liveAgents(oldActs, 20).map(agent => agent.role)).toContain('ui-reviewer')
 })

@@ -9,6 +9,7 @@ import { checksOn, noteModel } from './checks.ts'
 import type { Finding } from './checks.ts'
 import { raiseHitl } from './hitl.ts'
 import { CI_FIX_CAP, FIX_CAP, WORKFLOW_A_STEPS, findSlice, stepOf } from './ledger-projection.ts'
+import { canonicalRole } from './policy.ts'
 import { activePie, activeSlice, branchPie } from './projection.ts'
 import type { PassChecklist, PassFixCounts, PassProjection } from './types'
 
@@ -23,11 +24,15 @@ const HITL = "only the operator's explicit reply at the HITL raises it"
 /** Which fix loop a spawn joins, and the counter it bumps once it started. */
 export type FixSpawn = { kind: 'fix' | 'ci'; key: string; attempt: number }
 
-/** The fix loop an agent type belongs to: `ci` for ci-fix-attempter, `fix` for fix-attempter, else null. */
+/**
+ * The fix loop an agent type belongs to, by its canonical role: `ci` for
+ * ci-fix-attempter, `fix` for fix-attempter and ui-fix-attempter, else null.
+ */
 export function fixKind(subagentType: unknown): FixSpawn['kind'] | null {
   if (typeof subagentType !== 'string') return null
-  if (subagentType.endsWith('ci-fix-attempter')) return 'ci'
-  if (subagentType.endsWith('fix-attempter')) return 'fix'
+  const role = canonicalRole(subagentType)
+  if (role === 'ci-fix-attempter') return 'ci'
+  if (role === 'fix-attempter' || role === 'ui-fix-attempter') return 'fix'
   return null
 }
 

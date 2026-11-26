@@ -138,7 +138,7 @@ test('the pass command opens the pane, and closes it while it shows', async ($, 
 const LIVE_AGENTS = [
   { id: 'fx', description: 'P5 S5.2 fix: a', type: 'bytheslice:fix-attempter', status: 'running' as const },
   { id: 'tt', description: 'P5 S5.2 test: b', type: 'bytheslice:slice-tester', status: 'running' as const },
-  { id: 'dd', description: 'P5 S5.2 prep: c', type: 'bytheslice:discovery', status: 'completed' as const },
+  { id: 'dd', description: 'P5 S5.2 prep: c', type: 'bytheslice:code-explorer', status: 'completed' as const },
 ]
 
 test('rail rows carry live status and the last verdict; agents and gates sections follow', async ($, on) => {
@@ -154,7 +154,7 @@ test('rail rows carry live status and the last verdict; agents and gates section
     expect(texts).toContain('Agents · 2 live')
     expect(texts).toContain('  fix-attempter · running · 0s')
     expect(texts).toContain('  slice-tester · running · 0s')
-    expect(texts.some(text => text.includes('discovery'))).toBe(false)
+    expect(texts.some(text => text.includes('code-explorer'))).toBe(false)
     expect(texts).toContain('Gates · 5.2')
     expect(texts).toContain('  tester pass · a1b2c3d')
     expect(texts).toContain('  verifier fail · a1b2c3d')

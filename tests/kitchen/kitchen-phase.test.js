@@ -37,7 +37,22 @@ test('session and skill starts stay at dawn through all three prep agents', () =
 
 test('first cook or line worker opens the session and completion does not return it to dawn', () => {
   for (const type of ['implementer', 'plater', 'fix-attempter', 'debug-instrumenter', 'state-illustrator',
-    'block-composer', 'component-crafter', 'layout-architect', 'slice-tester', 'slice-verifier']) {
+    'ux-layout-designer', 'ui-builder', 'slice-tester', 'slice-verifier']) {
+    const rows = [session, start(type)];
+    assert.equal(foldActivity(rows, 2000).phase, 'open', type);
+    assert.equal(foldActivity([...rows, { t: 1200, sid: 'morning', ev: 'SubagentStop', aid: type }], 2000).phase, 'open', type);
+  }
+});
+
+test('legacy frontend agent names map to their new agent, and an old activity log opens as it did', () => {
+  const { LEGACY_ROLES, roleOfType } = require('../../mcp/kitchen-state.js');
+  for (const [type, role] of [['modern-ux-expert', 'ux-layout-designer'], ['layout-architect', 'ux-layout-designer'],
+    ['block-composer', 'ui-builder'], ['component-crafter', 'ui-builder']]) {
+    assert.equal(LEGACY_ROLES[type], role, type);
+    assert.equal(roleOfType(`bytheslice:${type}`), role, type);
+  }
+  // modern-ux-expert never opened the kitchen; the three that did still do.
+  for (const type of ['layout-architect', 'block-composer', 'component-crafter']) {
     const rows = [session, start(type)];
     assert.equal(foldActivity(rows, 2000).phase, 'open', type);
     assert.equal(foldActivity([...rows, { t: 1200, sid: 'morning', ev: 'SubagentStop', aid: type }], 2000).phase, 'open', type);

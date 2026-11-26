@@ -30,13 +30,14 @@ The two-level decomposition routes structured artifacts between singular-goal su
 
 | Agent | Singular goal | Dispatched in | Returns |
 |---|---|---|---|
-| [`agents/stage-decomposer.md`](agents/stage-decomposer.md) | identify Pies, then Slices within each Pie; propose the roadmap for approval | Phase 2 (single, readonly) | proposed pie/slice tree + band compliance (no writes) |
+| [`agents/stage-planner.md`](agents/stage-planner.md) (mode `full`) | identify Pies, then Slices within each Pie; propose the roadmap for approval | Phase 2 (single, readonly) | proposed pie/slice tree + band compliance (no writes) |
 | [`agents/rules-assembler.md`](agents/rules-assembler.md) | assemble the project rules file from elicitation answers | Phase 1.5 (single) | rules-file path + layering summary |
-| [`agents/db-schema-stage-writer.md`](agents/db-schema-stage-writer.md) | write the canned db-schema slice (Slice 1.4) | Phase 3 Workflow (conditional, Q3 = Yes) | slice file path + structured frontmatter return |
-| [`agents/phased-plan-writer.md`](agents/phased-plan-writer.md) | write **one** feature slice plan file | Phase 3 Workflow (`parallel()`, one per feature slice) | slice file path + `pie`/`slice`/`type`/`depends_on`/`tasks_count` + frontmatter return |
+| [`agents/phased-plan-writer.md`](agents/phased-plan-writer.md) | write **one** slice plan file: a feature slice (mode `cook-pizzas`), or the canned db-schema slice, Slice 1.4 (mode `db-schema`) | Phase 3 Workflow (`parallel()`, one per feature slice, plus the 1.4 branch when Q3 = Yes) | slice file path + `pie`/`slice`/`type`/`depends_on`/`tasks_count` + frontmatter return (same envelope in both modes) |
 | [`agents/master-checklist-synthesizer.md`](agents/master-checklist-synthesizer.md) | aggregate the writers' structured returns into the nested master checklist | Phase 4 (single, after the Workflow barrier) | `00_master_checklist.md` path |
 
-> Foundations Pie slices 1.1 to 1.3 (design-system, CI/CD, env-setup) are not written here; they are delivered by the run-once standalone skills `/set-display-case`, `/final-quality-check`, `/open-the-shop`, with their slice definitions in [`references/canned-stages/`](references/canned-stages/). Only Slice 1.4 (db-schema) gets a generated plan file (`db-schema-stage-writer`). cook-pizzas dispatches no foundation *writers*; the three legacy foundation-stage writers were removed in v5.
+> Foundations Pie slices 1.1 to 1.3 (design-system, CI/CD, env-setup) are not written here; they are delivered by the run-once standalone skills `/set-display-case`, `/final-quality-check`, `/open-the-shop`, with their slice definitions in [`references/canned-stages/`](references/canned-stages/). Only Slice 1.4 (db-schema) gets a generated plan file (`phased-plan-writer` in `db-schema` mode). cook-pizzas dispatches no foundation *writers* for 1.1 to 1.3; the three legacy foundation-stage writers were removed in v5.
+
+> **Older agent names.** A stage file, checklist or earlier message that names `stage-decomposer` means `stage-planner` mode `full`; `db-schema-stage-writer` means `phased-plan-writer` mode `db-schema`; `complexity-assessor` (from `/special-order`) means `stage-planner` mode `extend`. Read them that way; nothing on disk needs rewriting. The full old-to-new table is [`legacy-agent-names.md`](../sell-slice/references/legacy-agent-names.md).
 
 ## Inputs / Preconditions
 
@@ -57,7 +58,7 @@ The two-level decomposition routes structured artifacts between singular-goal su
 Before Phase 1, check for `bytheslice.config.json` at the project root. Honor these keys (see [`skills/setup-shop/references/bytheslice-config-schema.md`](../setup-shop/references/bytheslice-config-schema.md) for the full schema):
 
 - `rules.imports`: when non-empty, **skip Q9** (external rule-file imports) and use these URLs directly
-- `stages.targetFeatureStages`: pass to `stage-decomposer` to tune the splitter. Unset (the default), the roadmap is right-sized to the PRD and the 20 to 30 feature-slice band is only a ceiling for large apps, never padding: a small brief gets few pies, and a pie of a small app may have 1 or 2 slices. Set to any other band, it overrides that sizing and the count must land in it (smaller band = larger slices); the plugin default `"20-30"` that a loader fills in for an unset key is read as the ceiling, not an override
+- `stages.targetFeatureStages`: pass to `stage-planner` (mode `full`) to tune the splitter. Unset (the default), the roadmap is right-sized to the PRD and the 20 to 30 feature-slice band is only a ceiling for large apps, never padding: a small brief gets few pies, and a pie of a small app may have 1 or 2 slices. Set to any other band, it overrides that sizing and the count must land in it (smaller band = larger slices); the plugin default `"20-30"` that a loader fills in for an unset key is read as the ceiling, not an override
 - `stages.maxTasksPerStage`: pass to the writers (default `6`; warn if user set `> 8`)
 - `mcps.*`: pre-fills Q5 (Supabase MCP) and Q7 (design MCPs) so the elicitation skips already-answered questions
 
@@ -69,7 +70,7 @@ If a config-supplied answer covers a question, log a one-liner ("Q9 answered fro
 
 Elicitation is interactive and runs in the orchestrator's own turn; it is **not** delegated to a subagent. Ask each question with `ask_user_input_v0` before writing any files. Answers build the project rules file section by section.
 
-> The "never call `ask_user_input_v0`" rule in Appendix D applies to **dispatched subagents** (writers, the decomposer), which surface blocking ambiguity via `needs_human` + `hitl_*` instead. The orchestrator skill itself owns all human prompts, including this elicitation.
+> The "never call `ask_user_input_v0`" rule in Appendix D applies to **dispatched subagents** (writers, the planner), which surface blocking ambiguity via `needs_human` + `hitl_*` instead. The orchestrator skill itself owns all human prompts, including this elicitation.
 
 **Always provide a recommended answer in available options.**
 
@@ -147,9 +148,9 @@ After all answers, dispatch `rules-assembler` to write the project rules file (C
 
 ### Phase 2: Pie & Slice Identification
 
-Read the PRD. **Dispatch `stage-decomposer`** (single, readonly). It produces the proposed two-level roadmap the user reviews **before** any plan files are written. Wait for the return.
+Read the PRD. **Dispatch `bytheslice:stage-planner` with `mode: full`** (single, readonly). It produces the proposed two-level roadmap the user reviews **before** any plan files are written. Wait for the return.
 
-The decomposer works top-down:
+The planner works top-down:
 
 1. **Foundations → Pie 1.** The canned foundation slices are the early slices of **Pie 1** (`review: boundary`):
    - Slice 1.1: design-system gate
@@ -158,10 +159,10 @@ The decomposer works top-down:
    - Slice 1.4: db-schema foundation (only if Q3 = Yes)
 2. **Features → Slices.** Every PRD Section 2 feature defaults to **≥2 slices**: (a) shell slice: route, layout, empty/loading/error states; (b) data slice: queries, mutations, polish, edge cases. Tiny features (e.g. a static page) may be one slice.
 3. **Group Slices into Pies.** Bundle low-cross-coupling slices into **coherent chapters of usually 3 to 8 slices** (e.g. "Blog Editor" = the editor frontend slice + the server-actions slice + the publish-flow slice). Each Pie is the unit of `/sell-pie` autonomy, the PR, the worktree, and the HITL checkpoint. Foundations are Pie 1 (tracked via the `## Prep` gate); feature pies are Pie 2 onward. A small app's pie may hold 1 or 2 slices when the app has no more to give it; never pad a pie to reach 3.
-4. **Set `review:` per pie.** Default every pie to `review: boundary` (autonomous; one HITL at the pie boundary). Flag a pie `review: continuous` (forces `/sell-pie` into `/sell-slice` mode for the whole pie) when it is sensitive: **Payments, Auth, real-data migrations**, or anything the PRD marks high-risk. The decomposer proposes the `review:` value per pie; the user confirms it at approval. **Under `run.unattended: true`, every pie is `review: boundary`**, sensitive ones included: the operator chose hands-off for the whole run. Record one ticket decision line naming the pies that would otherwise have been `continuous`.
+4. **Set `review:` per pie.** Default every pie to `review: boundary` (autonomous; one HITL at the pie boundary). Flag a pie `review: continuous` (forces `/sell-pie` into `/sell-slice` mode for the whole pie) when it is sensitive: **Payments, Auth, real-data migrations**, or anything the PRD marks high-risk. The planner proposes the `review:` value per pie; the user confirms it at approval. **Under `run.unattended: true`, every pie is `review: boundary`**, sensitive ones included: the operator chose hands-off for the whole run. Record one ticket decision line naming the pies that would otherwise have been `continuous`.
 5. **Tag each slice:** `mvp:` per Q1; `type:` (`design-system | ci-cd | env-setup | db-schema | frontend | backend | full-stack | infrastructure`); `depends_on:` with only lower-numbered slices, never forward references. Within a pie, a slice's `slice` id is `"<pie>.<index>"` (e.g. `"2.6"`).
-6. **Band check, right-sized.** The **20 to 30 feature-slice band is a ceiling for large apps, not a target.** Size the roadmap to the PRD: a small brief (a private single-user tool, a handful of Section 2 features) gets few pies and few slices, for example 1 to 3 feature pies and well under 20 slices. Never pad to reach the band: no filler slices, no splitting a small feature into shell and data slices when one slice holds it, no pie invented to fill a count. A pie of a small app may hold fewer than 3 slices when the app has no more to give it. `stages.targetFeatureStages`, when set, still overrides this sizing. Cross-check PRD Section 7 (Out of Scope); never propose work the PRD excludes. Pass this right-sizing rule to `stage-decomposer` with the PRD.
-7. **User flow per pie (optional).** For each pie with a user-facing flow, the decomposer returns `user_flow`: 3 to 7 ordered steps, each naming the slice id in that pie that owns it. A backend-only pie has none. The flow is the source of each owning slice's one user-outcome Exit line.
+6. **Band check, right-sized.** The **20 to 30 feature-slice band is a ceiling for large apps, not a target.** Size the roadmap to the PRD: a small brief (a private single-user tool, a handful of Section 2 features) gets few pies and few slices, for example 1 to 3 feature pies and well under 20 slices. Never pad to reach the band: no filler slices, no splitting a small feature into shell and data slices when one slice holds it, no pie invented to fill a count. A pie of a small app may hold fewer than 3 slices when the app has no more to give it. `stages.targetFeatureStages`, when set, still overrides this sizing. Cross-check PRD Section 7 (Out of Scope); never propose work the PRD excludes. Pass this right-sizing rule to `stage-planner` with the PRD.
+7. **User flow per pie (optional).** For each pie with a user-facing flow, the planner returns `user_flow`: 3 to 7 ordered steps, each naming the slice id in that pie that owns it. A backend-only pie has none. The flow is the source of each owning slice's one user-outcome Exit line.
 
 **Present the proposed Pie/Slice tree to the user for approval before writing any files**: pies with their `review:` annotation, slices nested under each pie with type and `depends_on`. The user can re-bundle pies, re-split slices, or override any `review:` value here. Show each pie's `User flow` steps with their owning slice ids.
 
@@ -177,12 +178,12 @@ Once the user approves the roadmap, write every slice plan file in parallel. **R
 
 | Slice | Writer | Canned? | Condition |
 |---|---|---|---|
-| 1.4 (db-schema) | `db-schema-stage-writer` | Yes | Q3 = Yes only |
-| feature slices (Pies 2+) | `phased-plan-writer` | No | one `parallel()` branch per feature slice |
+| 1.4 (db-schema) | `phased-plan-writer` (mode `db-schema`) | Yes | Q3 = Yes only |
+| feature slices (Pies 2+) | `phased-plan-writer` (mode `cook-pizzas`) | No | one `parallel()` branch per feature slice |
 
 **Workflow shape:**
 
-1. **`parallel()` fan-out**: one branch per slice, each spawning the registered writer by type (`agent(inputs, {agentType: "bytheslice:phased-plan-writer"})`; the 1.4 branch uses `bytheslice:db-schema-stage-writer`). Each writer writes **exactly one** file and returns a **structured envelope** (its slice's `path`, `pie`, `slice`, `name`, `type`, `depends_on`, `tasks_count`, `hitl_required`, plus the standard `status`/`needs_human`/`hitl_*`). The schema is the writer's Output Contract in `agents/phased-plan-writer.md` (and `agents/db-schema-stage-writer.md` for 1.4).
+1. **`parallel()` fan-out**: one branch per slice, each spawning the registered writer by type (`agent(inputs, {agentType: "bytheslice:phased-plan-writer"})` with `mode: cook-pizzas`; the 1.4 branch spawns the same type with `mode: db-schema` and the Q3, Q4, Q5 and Q8 answers, the PRD path, the project rules file path and the canned template path `references/canned-stages/stage-4-db-schema-foundation.md`). Each writer writes **exactly one** file and returns a **structured envelope** (its slice's `path`, `pie`, `slice`, `name`, `type`, `depends_on`, `tasks_count`, `hitl_required`, plus the standard `status`/`needs_human`/`hitl_*`). The schema is the writer's Output Contract in `agents/phased-plan-writer.md`, identical for every branch, 1.4 included.
 2. **Barrier**: the Workflow waits for every branch. The orchestrator **validates each return against the writer Output Contract schema** before proceeding. Under the in-context fallback (no `Workflow`), the orchestrator performs this schema validation **manually**; enforcement is otherwise lost (see the fallback ref).
 3. **Synthesizer step** (Phase 4) receives the **collection of structured returns** as its input and aggregates them. It does **not** re-read the slice files from disk; the returns are the source of truth for the checklist rows.
 
@@ -238,9 +239,9 @@ Runs **only** when invoked as `/cook-pizzas --repie` against an existing **flat 
 The orchestrator owns every human prompt; subagents never call `ask_user_input_v0`.
 
 - **Interactive elicitation (Phase 1)** and the **roadmap approval (Phase 2)** / **`--repie` confirmation (Phase R)** are first-class orchestrator prompts via `ask_user_input_v0`.
-- **Subagent-surfaced HITL.** When `stage-decomposer` or a Phase 3 writer returns `needs_human: true`, halt that branch and surface the agent's `hitl_question` to the user with its `hitl_category` (`prd_ambiguity` | `external_credentials` | `destructive_operation` | `creative_direction`) and `hitl_context`. Resolve, then re-dispatch only the affected branch.
+- **Subagent-surfaced HITL.** When `stage-planner` or a Phase 3 writer returns `needs_human: true`, halt that branch and surface the agent's `hitl_question` to the user with its `hitl_category` (`prd_ambiguity` | `external_credentials` | `destructive_operation` | `creative_direction`) and `hitl_context`. Resolve, then re-dispatch only the affected branch.
 - A writer that hits the 6-task / ~15-file slice cap returns `hitl_required: true` / `hitl_reason: prd_ambiguity` proposing a split; surface it and re-bundle into the pie before continuing.
-- **Under `run.unattended: true`, nothing here waits on a human.** A writer's proposed split is applied as proposed and re-dispatched; any other writer or decomposer `needs_human` takes the option it recommends (or, with none, the one most consistent with the PRD and the ticket's **Answers**). Each resolution is one decision line in the order ticket. The return is never `needs_human`.
+- **Under `run.unattended: true`, nothing here waits on a human.** A writer's proposed split is applied as proposed and re-dispatched; any other writer or planner `needs_human` takes the option it recommends (or, with none, the one most consistent with the PRD and the ticket's **Answers**). Each resolution is one decision line in the order ticket. The return is never `needs_human`.
 
 ## Progress Report Format
 
@@ -333,6 +334,6 @@ pies: <int>
 feature_slices: <int>
 needs_human: false | true
 hitl_category: null | "prd_ambiguity" | "external_credentials" | "destructive_operation" | "creative_direction"
-hitl_question: null | "<plain-language question if a writer or the decomposer was blocked>"
+hitl_question: null | "<plain-language question if a writer or the planner was blocked>"
 hitl_context: null | "<what triggered this>"
 ```

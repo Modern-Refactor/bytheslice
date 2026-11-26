@@ -50,6 +50,32 @@ test('a builder edit after the verifier pass is stale; one before it, or the mai
   expect(touchedOf(rows.filter(row => row.ev !== 'verdict'), '5.1', new Map()).some(file => file.stale)).toBe(false)
 })
 
+test('an edit after the verifier pass by a UI fixer or a frontend builder is stale too, under its new or retired name', () => {
+  const rows = rowsFrom([
+    pass(1),
+    edit(2, 'app/a.tsx', 'ui-fix-attempter'),
+    edit(3, 'app/b.tsx', 'bytheslice:ui-builder'),
+    edit(4, 'app/c.tsx', 'ux-layout-designer'),
+    edit(5, 'app/d.tsx', 'bytheslice:layout-architect'),
+    edit(6, 'app/e.tsx', 'slice-tester'),
+  ])
+  expect(touchedOf(rows, '5.1', new Map()).map(file => [file.path, file.roles, file.stale])).toEqual([
+    ['app/a.tsx', ['ui-fix-attempter'], true],
+    ['app/b.tsx', ['ui-builder'], true],
+    ['app/c.tsx', ['ux-layout-designer'], true],
+    ['app/d.tsx', ['ux-layout-designer'], true],
+    ['app/e.tsx', ['slice-tester'], false],
+  ])
+})
+
+test('an edit row under a retired agent name lists its new role', () => {
+  const rows = rowsFrom([edit(1, 'app/a.tsx', 'bytheslice:block-composer'), edit(2, 'app/a.tsx', 'bytheslice:ui-builder'), edit(3, 'app/b.tsx', 'component-crafter')])
+  expect(touchedOf(rows, '5.1', new Map()).map(file => [file.path, file.roles])).toEqual([
+    ['app/a.tsx', ['ui-builder']],
+    ['app/b.tsx', ['ui-builder']],
+  ])
+})
+
 test('an edit becomes one row of path, agent id, role and tool, and never its content', async ($, on) => {
   const { world, start } = stage(on, { checklist: CHECKLIST_FIXTURE })
   engineLoops(on, ['impl-1'])

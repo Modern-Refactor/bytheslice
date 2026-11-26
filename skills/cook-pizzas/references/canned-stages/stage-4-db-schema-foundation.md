@@ -25,10 +25,10 @@ completion_criteria:
 
 **Architecture:** This is a horizontal foundation stage. All feature stages that touch data (type `backend`, `full-stack`) depend on the schema and types produced here. The `db-schema-drift` CI job (added in Stage 2) validates that the schema source matches applied migrations.
 
-**Architecture note (project-specific):** [populated by db-schema-stage-writer based on Q4, Q5, Q8]
+**Architecture note (project-specific):** [populated by phased-plan-writer in db-schema mode based on Q4, Q5, Q8]
 - Database tooling: Supabase | Prisma | Drizzle | other (from Q4)
-- Schema file location: [tooling-specific, from db-schema-stage-writer]
-- Entities detected from PRD Section 4: [list populated by db-schema-stage-writer]
+- Schema file location: [tooling-specific, from phased-plan-writer in db-schema mode]
+- Entities detected from PRD Section 4: [list populated by phased-plan-writer in db-schema mode]
 
 **Tech stack:**
 - Database tooling: [from Q4]

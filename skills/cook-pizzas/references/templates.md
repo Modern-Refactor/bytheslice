@@ -237,7 +237,7 @@ Good examples (transcript-verifiable, binary, specific):
 - `tsc --noEmit` exits 0 with no errors
 - `slice-verifier` agent returns `overall: pass` (gate tier 3: lint/typecheck/build/unit-integration/e2e-by-tag/design-system/ci-integrity all green, manifest backstop clean) for this slice
 - `slice-tester` agent returns `overall: pass` with a per-affordance verdict for every declared affordance in the build manifest
-- `quality-reviewer` and `spec-reviewer` agents both return `verdict: pass` for every in-scope task
+- `code-reviewer` agent returns `verdict: pass` for every in-scope task
 - `library-entry-writer` reports `production_imports_added: 0` until user approval; then user explicitly approved each entry at the Phase 4.5 gate
 - Route `/dashboard/billing` renders with no console errors (screenshot captured in transcript)
 - `slice-tester completed <flow step> end-to-end on /<route> with zero console errors (screenshot at 1280 in transcript)`: the one sanctioned user-outcome line, written only by a `frontend` or `full-stack` slice that owns a step in its pie's `User flow`, with `<flow step>` taken from that step. One line or none: a slice that owns no step writes none (`agents/phased-plan-writer.md` "User-outcome line")

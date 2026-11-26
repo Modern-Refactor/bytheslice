@@ -5,7 +5,7 @@ import { mock } from 'claude-code/testing'
 import type { AgentInfo, AgentSpawnInput, On, RenderSurface, SessionSendResult, UiNotifyResult, UiPane } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { DEFAULT_ROLES } from './policy.ts'
+import { DEFAULT_ROLES, canonicalRole } from './policy.ts'
 
 export const START_MS = 1760000000000
 export const PLUGIN = 'bytheslice'
@@ -427,7 +427,7 @@ export async function spawn($: Engine, subagentType: string, description: string
     ...extra,
   })
   if (typeof started.agentId === 'string') {
-    const tier = DEFAULT_ROLES[subagentType.replace(/^bytheslice:/, '')]?.[0]
+    const tier = DEFAULT_ROLES[canonicalRole(subagentType)]?.[0]
     ranOn.set(started.agentId, (tier === undefined ? undefined : MODEL_IDS[tier]) ?? MODEL_IDS.opus ?? 'claude-opus-5-5')
   }
   return started

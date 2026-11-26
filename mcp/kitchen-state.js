@@ -8,6 +8,28 @@ const { execFile } = require('node:child_process');
 // The shared ledger fold; an install without it (a skills-only copy) shows no progress rather than failing.
 const ledgerSummary = (() => { try { return require('../scripts/ledger-summary.js'); } catch { return null; } })();
 
+// Retired agent names that now resolve to another agent: the entries of mod/policy.ts
+// LEGACY_AGENT_ALIASES whose canonicalRole is a new name (tests/pass/legacy-aliases.test.js
+// holds this copy equal), so an actor started under an old name carries its new role too.
+const LEGACY_ROLES = Object.freeze({
+  'spec-reviewer': 'code-reviewer', 'quality-reviewer': 'code-reviewer',
+  'break-ui-runner': 'ui-reviewer', 'design-critic': 'ui-reviewer',
+  discovery: 'code-explorer', 'checklist-curator': 'code-explorer',
+  'complexity-assessor': 'stage-planner', 'stage-decomposer': 'stage-planner',
+  'db-schema-stage-writer': 'phased-plan-writer',
+  'modern-ux-expert': 'ux-layout-designer', 'layout-architect': 'ux-layout-designer',
+  'block-composer': 'ui-builder', 'component-crafter': 'ui-builder',
+});
+// An agent type without its plugin prefix (`bytheslice:discovery` reads `discovery`).
+const bareType = type => { const name = String(type || ''); return name.slice(name.lastIndexOf(':') + 1); };
+// The role an agent type counts as: the bare name, a retired one read as the agent that replaced it.
+const roleOfType = type => { const bare = bareType(type); return LEGACY_ROLES[bare] || bare; };
+// The agents whose start opens the kitchen (work on the line begins). Retired names stay listed so
+// an old activity log reads as it did; their replacements are listed beside them.
+const OPENERS = new Set(['implementer', 'fix-attempter', 'slice-tester', 'slice-verifier', 'block-composer',
+  'component-crafter', 'layout-architect', 'plater', 'debug-instrumenter', 'state-illustrator',
+  'ui-builder', 'ux-layout-designer']);
+
 const EVENTS = new Set(['SessionStart', 'Stop', 'SubagentStart', 'SubagentStop',
   'PreToolUse', 'PostToolUse', 'UserPromptExpansion']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -303,7 +325,7 @@ function foldActivity(inputRows, now = Date.now(), { mergedPie = null, activePie
       const dispatch = dispatches.find(item => item.agent === row.agent && !item.provisionalAid && !item.confirmedAid);
       if (dispatch) dispatch.provisionalAid = row.aid;
       active.set(row.aid, { ...row });
-      if (/(?:^|:)(?:implementer|fix-attempter|slice-tester|slice-verifier|block-composer|component-crafter|layout-architect|plater|debug-instrumenter|state-illustrator)$/.test(row.agent || '')) opened = true;
+      if (OPENERS.has(bareType(row.agent))) opened = true;
     }
     if (row.ev === 'PostToolUse' && row.aid) {
       const dispatch = dispatches.find(item => !item.confirmedAid && item.agent === row.agent && item.label === row.label);
@@ -320,7 +342,7 @@ function foldActivity(inputRows, now = Date.now(), { mergedPie = null, activePie
   const actors = [...active.values()].map(row => {
     const dispatch = dispatches.find(item => item.confirmedAid === row.aid)
       || dispatches.find(item => item.provisionalAid === row.aid && !item.confirmedAid);
-    return { aid: row.aid, type: row.agent || 'unknown', label: dispatch?.label || '',
+    return { aid: row.aid, type: row.agent || 'unknown', role: roleOfType(row.agent) || 'unknown', label: dispatch?.label || '',
       pie: dispatch?.pie ?? row.pie ?? null, slice: dispatch?.slice ?? row.slice ?? null,
       startedAt: row.t, sid: row.sid || '' };
   });
@@ -338,10 +360,13 @@ function foldActivity(inputRows, now = Date.now(), { mergedPie = null, activePie
 }
 
 // The step an agent is on, from the dispatch label convention (`P5 S5.2 build: ...`) or, without one, from its role.
+// Retired names keep their own entry, so an old activity log reads as it did.
 const STEPS = ['build', 'test', 'verify', 'fix', 'commit', 'review', 'plan'];
 const STEP_OF_TYPE = { implementer: 'build', 'block-composer': 'build', 'component-crafter': 'build', 'layout-architect': 'build',
+  'ui-builder': 'build', 'ux-layout-designer': 'build',
   'state-illustrator': 'build', plater: 'build', 'slice-tester': 'test', 'slice-verifier': 'verify', 'local-gates-runner': 'verify',
-  'fix-attempter': 'fix', 'debug-instrumenter': 'fix', 'spec-reviewer': 'review', 'quality-reviewer': 'review' };
+  'fix-attempter': 'fix', 'debug-instrumenter': 'fix', 'spec-reviewer': 'review', 'quality-reviewer': 'review',
+  'code-reviewer': 'review' };
 function stepOf(agent) {
   const labelled = /\bS\d+\.\d+\s+([a-z]+)\b/i.exec(agent.label || '')?.[1]?.toLowerCase();
   if (STEPS.includes(labelled)) return labelled;
@@ -522,4 +547,4 @@ async function readKitchenState(root, { since, port = null, now = Date.now() } =
 }
 
 module.exports = { shopStatus, mergeEvidence, sanitizeRow, parseActivity, parseChecklist, foldActivity, buildSnapshot, readKitchenState,
-  stepOf, taskProgress, countPlanTasks };
+  stepOf, taskProgress, countPlanTasks, LEGACY_ROLES, roleOfType };
