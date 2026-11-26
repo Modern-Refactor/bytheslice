@@ -1,6 +1,6 @@
 ---
 name: pizza-party
-description: "Cater a whole app, start to finish: from a short brief to a finished, deployed app with a URL. One interview up front (AskUserQuestion), then no human stops: /setup-shop, /create-menu, /cook-pizzas, the Prep pie, every pie through /sell-pie in ship-once delivery (all gates local), one PR that ships the app, a deploy to whatever host the operator has authorized (or an artifact or localhost link), and a run record for comparing runs over time. Every decision a sub-skill would normally ask about is decided, recorded in the order ticket, and the run continues. Use when the user runs /pizza-party, sets a /goal to build an app end to end, or says \"build me this app end to end\", \"from scratch to production\", \"pizza party\", \"bake the whole roadmap\" or \"run all pies\"."
+description: "Cater a whole app, start to finish: from a short brief to a finished, deployed app with a URL. One interview up front (AskUserQuestion), then no human stops: /setup-shop, /create-menu, /cook-pizzas, the Prep pie, every pie through /sell-pie in ship-once delivery (all gates local), one PR that ships the app, a deploy to whatever host the operator has authorized (or an artifact or localhost link), and a run record for comparing runs over time. Every decision a sub-skill would normally ask about is decided and the run continues: technical calls by the team, business calls with a reversible default (a Fable stand-in operator weighs the ones the brief leaves open), all reviewed in the order ticket at the end. Use when the user runs /pizza-party, sets a /goal to build an app end to end, or says \"build me this app end to end\", \"from scratch to production\", \"pizza party\", \"bake the whole roadmap\" or \"run all pies\"."
 user-invocable: true
 triggers: ["/bytheslice:pizza-party", "/pizza-party", "pizza party", "build this app end to end", "build me an app end to end", "end to end build", "from scratch to production", "bake the whole roadmap", "run all pies", "bake every pie", "autonomous delivery"]
 ---
@@ -17,11 +17,12 @@ The conductor is **thin**. It holds no implementation context: it runs the exist
 
 ## The no-stop rule
 
-Under `/pizza-party` every phase runs with `run.unattended: true`. Each place a skill would normally raise a question resolves like this, and every resolution becomes one line under **Decisions made without you** (or **Deferred**) in the ticket:
+Under `/pizza-party` every phase runs with `run.unattended: true`. Each place a skill would normally raise a question is routed by [references/decision-routing.md](references/decision-routing.md) (the single source) and resolves like this; every resolution becomes one ticket line under **Your call**, **Decided by the team** or **Deferred**:
 
 | Would have asked about | Under /pizza-party |
 |---|---|
-| Ambiguity in the brief or plan (`prd_ambiguity`), a design call (`creative_direction`), a roadmap or token approval | Take the recommended option, or the one most consistent with the brief and the Answers; record it |
+| A **technical** call (libraries, architecture, file layout, the run's own schema, tests, CI, roadmap sizing, token values from the **Look**, fix approaches, registry items) | The rule table: take the recommended option, or the one most consistent with the brief and the Answers; one line under **Decided by the team**. No agent dispatch |
+| A **business** call (features added or cut, Acceptance meaning, users and roles, pricing, personal data, user-facing naming or brand beyond the **Look**, a paid or data-holding service, legal terms, anything reaching real people or production data) | Apply the reversible default at once, queue it under **Waiting on the stand-in**, let the stand-in operator weigh it at the next boundary (see below); it ends under **Your call** with how to change it |
 | A service with no credentials (`external_credentials`) | Use an authorized provider; else a local substitute (SQLite, local auth, console email); record it. Only if the app cannot run without it, defer the slices that need it |
 | A destructive operation on anything shared that the operator did not name in the interview (`destructive_operation`) | Skip it and record it. The one thing the run refuses rather than decides |
 | A slice whose 3 fix loops ran out | One replan through `/special-order`: split it into smaller slices, each naming which of the original Exit criteria it covers, together covering all of them. Bake the split. Still stuck: mark it deferred (`[ ]` with `Status: deferred: <reason>`), record it, keep going |
@@ -29,6 +30,16 @@ Under `/pizza-party` every phase runs with `run.unattended: true`. Each place a 
 | A Claude Code permission prompt | Checked once before the interview (Phase 0); the run cannot answer one mid-way |
 
 Fix caps never rise, and every slice still goes through the bakers so it carries a slice-verifier pass. Those are rails, not stops: they reroute the work, they never wait.
+
+## The stand-in operator
+
+`bytheslice:stand-in-operator` answers queued questions the way the operator would, on Fable: pass `model: "fable"` explicitly on every dispatch. It is called only when needed, so it costs few tokens ([decision-routing.md](references/decision-routing.md) has the full rules):
+
+- **When.** Only for a business question the brief and Answers leave open, a `/sell-pie` approval the Answers do not cover, a technical question with no recommended option (or two that fit equally), or a stuck-slice replan that would drop or change an Exit criterion or Acceptance line. Never for a call the rule table settles.
+- **Batching.** Queued questions already carry their provisional default, so work never waits. Dispatch once per phase boundary with a non-empty queue (before the next phase reads that phase's output), and once per pie boundary in Phase 6. A blocking question dispatches at once and carries the whole queue.
+- **After a dispatch.** Apply each override where it lands (PRD, plan, ticket, config), move every answer to **Your call** or **Decided by the team**, empty the queue, and add one **Progress** line (`stand-in <k> of <max>`).
+- **Budget.** `run.standIn.maxDispatches` (default 8). Past it, the rule table plus the reversible default resolve the rest, each **Your call** line marked `no stand-in: budget spent`. `run.standIn.enabled: false` turns it off.
+- **Never.** It never asks the operator, writes a file, approves a destructive operation on anything shared the operator did not name, or invents a credential.
 
 ## Phase 0: Preflight (silent)
 
@@ -61,7 +72,7 @@ Then write the ticket: the brief verbatim, the **Answers**, and an **Acceptance*
 
 ```jsonc
 {
-  "run": { "unattended": true, "conductor": "pizza-party" },
+  "run": { "unattended": true, "conductor": "pizza-party", "standIn": { "maxDispatches": 8 } },
   "bootstrap": { "variant": "single-app", "stack": "<from Answers>", "roadmapFile": null },
   "delivery": { "mode": "ship-once", "sliceBudgetHours": 0 },
   "review": { "default": "boundary" },
@@ -78,7 +89,7 @@ Then write the ticket: the brief verbatim, the **Answers**, and an **Acceptance*
 
 ## Phase 3: Menu (create-menu)
 
-Run `/create-menu` with the brief and the ticket path. Under `run.unattended` it takes its answers from the ticket and records the rest. Output: the PRD under `docs/`.
+Run `/create-menu` with the brief and the ticket path. Under `run.unattended` it takes its answers from the ticket and records the rest. Output: the PRD under `docs/`. Then dispatch the stand-in if the queue is not empty, so a business override lands in the PRD before `/cook-pizzas` reads it (the same check closes every later phase).
 
 ## Phase 4: Roadmap (cook-pizzas)
 
@@ -95,7 +106,7 @@ Run `/cook-pizzas` on the PRD. Under `run.unattended` it takes Phase 1 from the 
 
 For each pie in checklist order, run `/sell-pie <n>`. Under ship-once each pie branches from the ship branch, every slice runs the context-separated build, test, verify and fix Workflow with all gates local, and `/box-it-up --pie-local` merges the pie into the ship branch (`--no-ff`, every slice commit kept) once its slices verified and the full local check passed. Pies run one at a time, never in parallel.
 
-`/sell-pie` resolves its approval batch (migrations, data loads, size exceptions) from the ticket's **Answers**; anything the interview did not cover defers that slice instead of asking. It returns `status: complete | complete_with_deferrals` with a `blocked` list. A deferred slice's commits were moved to a local `deferred/pie-N-sN.M` branch and its dependents deferred too, so nothing unverified reaches the ship branch. After each pie: one **Progress** line (slices done, deferred), and apply the stuck-slice rule from the table above to each `blocked` slice: one replan through `/special-order` (the new slices bake in a follow-up `/sell-pie` for the same pie), then a **Deferred** line if it still fails. The last pie returns `ship_ready: true`.
+`/sell-pie` resolves its approval batch (migrations, data loads, size exceptions) from the ticket's **Answers**. For an item they do not cover: reversible and on a resource the run itself created (a migration on the run's own new schema, seed data in its own database, a size exception), apply it and record it under **Decided by the team**; not reversible, or touching anything shared, defer the slice as before. Anything else goes to the stand-in as a blocking dispatch instead of deferring; the slice defers only when the stand-in returns `defer: true`, or the budget is spent and the item is not reversible. It returns `status: complete | complete_with_deferrals` with a `blocked` list. A deferred slice's commits were moved to a local `deferred/pie-N-sN.M` branch and its dependents deferred too, so nothing unverified reaches the ship branch. After each pie: one **Progress** line (slices done, deferred), dispatch the stand-in once if the queue is not empty, and apply the stuck-slice rule from the table above to each `blocked` slice: one replan through `/special-order` (the new slices bake in a follow-up `/sell-pie` for the same pie; a replan that would drop or change an Exit criterion or Acceptance line goes to the stand-in first), then a **Deferred** line if it still fails. The last pie returns `ship_ready: true`.
 
 ## Phase 7: Ship (one PR)
 
@@ -109,7 +120,7 @@ When the last pie returns `ship_ready: true`, run `/box-it-up --ship` with the s
 
 ## Phase 9: Report and record
 
-1. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/pizza-party.js" record "<app root>" --brief <id> --outcome shipped|partial|failed --url <url> --url-kind deployed|artifact|localhost --model <model id> --started <ms> --acceptance <passed>/<total>`. It appends one line to `~/.bytheslice/pizza-party/runs.jsonl` with the ledger's totals (slices, fix loops, cost, warnings) and the ticket's decision and deferral counts. `pizza-party.js runs --brief <id>` compares every run of a brief, so the same brief can be rerun as models improve.
+1. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/pizza-party.js" record "<app root>" --brief <id> --outcome shipped|partial|failed --url <url> --url-kind deployed|artifact|localhost --model <model id> --started <ms> --acceptance <passed>/<total>`. Before it, the **Waiting on the stand-in** queue must be empty (one last dispatch, or the reversible default past the budget) and **Your call** ordered highest impact first. It appends one line to `~/.bytheslice/pizza-party/runs.jsonl` with the ledger's totals (slices, fix loops, cost, warnings), the ticket's counts (`yourCall`, `teamDecisions`, `waiting`, `deferred`, and `decisions` as their total) and `standInDispatches`. `pizza-party.js runs --brief <id>` compares every run of a brief, so the same brief can be rerun as models improve.
 2. Final report, verdict first:
 
 ```
@@ -117,14 +128,17 @@ Pizza party: <shipped | partial | failed> · <App name>
 URL: <url> (<deployed on <host> | artifact | localhost>)
 Acceptance: <passed>/<total>
 Built: <pies> pies, <slices done>/<slices> slices · PR <url> (merged | open)
-Decisions made without you: <n> (docs/pizza-party/order.md)
+Your call: <n> (defaults applied, change any of them)
+  1. <decision> · default: <x> · to change: <how>
+  ...
+Decided by the team: <n> (docs/pizza-party/order.md)
 Deferred: <n> · <one line each>
 Run record: ~/.bytheslice/pizza-party/runs.jsonl
 ```
 
 ## Hard constraints
 
-- **One interview, then no stops.** Nothing after Phase 1 asks the operator anything. Decide, record, continue.
+- **One interview, then no stops.** Nothing after Phase 1 asks the operator anything. Decide, record, continue. Business calls are reviewed at the end under **Your call**, never asked mid-run.
 - **Thin conductor.** The conductor never writes app code, plans, tests or PR bodies itself; the skills and their agents do. Its own writes are the ticket, `bytheslice.config.json`, the ship branch and the run record.
 - **No vendor by default.** Hosts, databases and auth come from what the operator has authorized and chose in the interview; with none, local fallbacks. Never recommend or assume a provider the operator has not authorized.
 - **Rails stay on.** The fix caps, verify-once and the Pass's checkbox warning all apply; a slice is marked done only after its slice-verifier pass. Never raise a cap.
@@ -137,6 +151,8 @@ Run record: ~/.bytheslice/pizza-party/runs.jsonl
 - [ ] Preflight ran; the permission mode was settled in the interview if needed
 - [ ] The interview was the only time the operator was asked anything
 - [ ] The ticket has Answers, Acceptance, every decision and deferral, and a Progress line per phase
+- [ ] The **Waiting on the stand-in** queue is empty
+- [ ] Every business decision is under **Your call** with the default applied and how to change it
 - [ ] Every pie was baked through `/sell-pie`; every slice either verified or deferred with a reason
 - [ ] One PR shipped the app (merged, or open and reported)
 - [ ] A URL was delivered (deployed, artifact or localhost) and smoke-checked against Acceptance
@@ -154,7 +170,10 @@ slices_done: <int>
 slices_total: <int>
 pr_url: <url or null>
 pr_merged: true | false
-decisions: <int>
+decisions: <int>                     # your_call + team_decisions
+your_call: [<decision · default · to change>]
+team_decisions: <int>
+stand_in_dispatches: <int>
 deferred: [<slice or item: reason>]
 ticket: docs/pizza-party/order.md
 run_record: ~/.bytheslice/pizza-party/runs.jsonl

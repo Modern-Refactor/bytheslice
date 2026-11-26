@@ -9,7 +9,8 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '../..');
 const readText = (p) => fs.readFileSync(path.join(root, p), 'utf8');
-const TIERS = new Set(['haiku', 'sonnet', 'opus']);
+// fable ranks above opus; the stand-in operator runs on it at effort high.
+const TIERS = new Set(['haiku', 'sonnet', 'opus', 'fable']);
 const OPUS_EFFORT = 'medium';
 
 // One frontmatter field, unquoted.
@@ -86,6 +87,7 @@ test('every registered agent names a known tier and an effort, and every opus ag
   }
   const loud = [...agents].filter(([, a]) => a.model === 'opus' && a.effort !== OPUS_EFFORT).map(([n, a]) => `${n} (${a.effort})`);
   assert.deepEqual(loud, [], `opus agents not at effort ${OPUS_EFFORT}`);
+  assert.deepEqual(agents.get('stand-in-operator'), { model: 'fable', effort: 'high', file: 'skills/pizza-party/agents/stand-in-operator.md' });
 });
 
 test('the model-tier guide lists every registered agent with its frontmatter tier and effort', () => {

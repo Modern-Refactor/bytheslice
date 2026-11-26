@@ -66,7 +66,7 @@ Honor these `bytheslice.config.json` keys when present (see [`skills/setup-shop/
 - `mcps.shadcn`, `mcps.figma`, `mcps.magic`, declarative MCP availability for the token-expander agent
 - `modelTiers.tokenExpander`, override the agent model tier for THIS run (the bundle and gate checks are a script and take no tier)
 - `ui.registries`, the operator's own registry preferences (namespaces such as `"@magicui"`, or `{ name, catalog, item, theme?, notes? }` objects; see [`ui-sources.md`](../sell-slice/references/ui-sources.md)). The public shadcn directory never supplies a theme; only an operator entry with a `theme` does. Mode B installs the first entry's `theme` item on a greenfield project (see "Registry theme" below). Empty or absent: today's behavior, no theme install.
-- `run.unattended`, `true` when nobody is watching the run (`/pizza-party` sets it). Every operator prompt in this skill then takes its recommended answer and records it (see "Unattended runs" below). HITL bubbles in the return contract still bubble.
+- `run.unattended`, `true` when nobody is watching the run (`/pizza-party` sets it). Every operator prompt in this skill then takes its recommended answer and records it (see "Unattended runs" below). A missing brief or an unreadable bundle no longer bubbles; the other HITL triggers still do.
 
 ---
 
@@ -97,7 +97,7 @@ No bundle provided. Skill generates the token system from a brand brief.
 **Detection:** No bundle folder, no design export, only a brand description, colors, or a quick brief.
 
 **Flow:**
-1. Collect brand brief from user if not already in context (via `ask_user_input_v0`; unattended, read it from the project's PRD or brief docs, and bubble `prd_ambiguity` only when none exists)
+1. Collect brand brief from user if not already in context (via `ask_user_input_v0`; unattended, use the order ticket's **Brief** and **Look**, else the project's PRD or brief docs, and record it; never bubble)
 2. **Registry theme (greenfield only).** If `ui.registries` has an entry with a `theme` item and the project is greenfield, install the theme and point `token-expander` at its brand layer (see "Registry theme" below). Otherwise skip this step.
 3. Dispatch `bytheslice:token-expander` (opus, medium effort, enforced by registration): `mode: full` generates a complete token system; `mode: brand-layer` (after step 2) proposes values only for the theme's documented brand layer
 4. Surface the generated tokens to the user for approval via `ask_user_input_v0`. **Unattended:** take the generated tokens as approved, record the choice under "Decisions made without review" in `docs/design-system.md`, and continue
@@ -127,8 +127,10 @@ When `run.unattended: true`, every operator prompt in this skill takes its recom
 - **Mode A gap prompt:** dispatch `token-expander` with `missing_categories` and take its values.
 - **Mode B token approval:** take the generated tokens.
 - **Step 4 Q-A to Q-E:** the option marked **(Recommended)**.
+- **No brief in context:** use the order ticket's **Look** plus its **Brief** (else the PRD or brief docs). Never bubble.
+- **Bundle missing or unreadable:** fall back to brief-first mode (Mode B). Never bubble.
 
-Each answer taken this way is one bullet under `## Decisions made without review` at the end of `docs/design-system.md`: the question, the answer taken, and one line on how to revisit it (re-run `/set-display-case`, or edit the brand layer). The section is what the operator reads first when they come back. The 2-round revision cap never triggers (nobody requests a revision), and the HITL triggers below still bubble: a missing brief or an unreadable bundle is not a prompt the flag can answer.
+Each answer taken this way is one bullet under `## Decisions made without review` at the end of `docs/design-system.md`: the question, the answer taken, and one line on how to revisit it (re-run `/set-display-case`, or edit the brand layer). The section is what the operator reads first when they come back. When the order ticket `docs/pizza-party/order.md` exists, each one is also a ticket line per `skills/pizza-party/references/decision-routing.md`: token values, the mode and the Q-A to Q-E picks are technical (**Decided by the team**); a brand call beyond the **Look** answer (a name, a voice, a logo direction) is business and is queued under **Waiting on the stand-in** with the pick applied as the provisional default. The 2-round revision cap never triggers (nobody requests a revision); the remaining HITL triggers below still bubble.
 
 ---
 
@@ -279,7 +281,7 @@ hitl_context: null | "<what triggered this>"
 **HITL triggers for this skill:**
 - Token completeness cannot be resolved after 2 rounds (Mode B) → `creative_direction`
 - User provides conflicting brand direction → `creative_direction`
-- Bundle path does not exist or cannot be read → `needs_human: true`, `hitl_category: prd_ambiguity`
+- Bundle path does not exist or cannot be read → `needs_human: true`, `hitl_category: prd_ambiguity` (unattended: fall back to brief-first mode and record it instead)
 
 This skill does NOT call `ask_user_input_v0` for HITL resolution, it bubbles up the structured contract and the orchestrator (or standalone skill at end-of-turn) prompts the user.
 

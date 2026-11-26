@@ -5,13 +5,14 @@ version: "2.0"
 
 # Model Tier Guide
 
-The ByTheSlice plugin uses three model tiers across all sub-agents. Each tier maps to an Anthropic alias that auto-resolves to the latest version per provider.
+The ByTheSlice plugin uses four model tiers across its sub-agents. Each tier maps to an Anthropic alias that auto-resolves to the latest version per provider.
 
 | Tier | Alias | Use cases | Effort default |
 |---|---|---|---|
 | **Fast** | `haiku` | Reading and resolving config, small lookups | low |
 | **Balanced** | `sonnet` | Implementation review, judgment calls, vision tasks | medium |
 | **Deep** | `opus` | Primary implementation, codebase discovery, plan writing, creative expansion, retrospective | medium |
+| **Judgment** | `fable` | Standing in for the operator on business calls during an unattended `/pizza-party` run (one agent, dispatched rarely) | high |
 
 ## Why these tiers
 
@@ -20,6 +21,7 @@ The ByTheSlice plugin uses three model tiers across all sub-agents. Each tier ma
 - Most reviewers + vision sit in the middle; Sonnet handles them well at lower cost
 - The actual writing of new code (the implementer) gets Opus; this is where dollars are best spent
 - Every Opus agent runs at effort `medium`: the model depth carries the quality, and a higher effort on top mostly adds latency and tokens
+- One agent sits above Opus: `stand-in-operator` makes the calls the operator would have made mid-run, so it gets the highest-quality thinking model; it is dispatched only when the decision-routing rule escalates, batched per phase, and capped by `run.standIn.maxDispatches`, which keeps its token cost small
 
 ## Per-agent model assignments
 
@@ -56,14 +58,15 @@ The table below lists every registered agent with the **actual current values** 
 | **inspect-display** | platform-walker | `sonnet` | high | yes |
 | **special-order** | phased-plan-writer (incremental mode) | `opus` | medium | no |
 | **close-shop** | retrospective-reviewer | `opus` | medium | yes |
+| **pizza-party** | stand-in-operator | `fable` | high | yes |
 
 > **Note on `close-shop`:** The `retrospective-reviewer` agent is experimental. Its model and effort assignments are fixed as documented above.
 
 > **v5 verification agents.** v5 splits per-slice verification into two singular-goal agents: `slice-tester` (independent behavioral/rendered testing, `sonnet/high`) and `slice-verifier` (all static gates run once: lint, typecheck, build, unit/integration, tagged e2e, design-system grep, CI-integrity, and the manifest under-declaration backstop; `sonnet/high`). The `slice-verifier` replaces the three v4 static verifiers, and the v4 rendered visual review now lives in `slice-tester`.
 
-Aliases (`haiku`, `sonnet`, `opus`) resolve to:
+Aliases (`haiku`, `sonnet`, `opus`, `fable`) resolve to:
 
-- **Anthropic API:** `opus` → Claude Opus 4.7, `sonnet` → Claude Sonnet 4.6, `haiku` → Claude Haiku 4.5
+- **Anthropic API:** `fable` → Claude Fable, `opus` → Claude Opus 4.7, `sonnet` → Claude Sonnet 4.6, `haiku` → Claude Haiku 4.5
 - **Bedrock / Vertex / Foundry:** different defaults; pin via env vars (see below)
 
 ## Overriding the tier mapping
@@ -98,9 +101,9 @@ Each agent declares an effort level. Effort is independent of model. Override at
 |---|---|
 | low | Mechanical, deterministic |
 | medium | Default for most agents |
-| high | Complex reasoning on a `sonnet` agent (testers, verifiers, fixers) |
+| high | Complex reasoning on a `sonnet` agent (testers, verifiers, fixers), and the one `fable` agent |
 
-Every `opus` agent runs at `medium`; `opus` with `high` or `xhigh` fails `tests/model-tiers/`.
+Every `opus` agent runs at `medium`; `opus` with `high` or `xhigh` fails `tests/model-tiers/`. The `fable` agent (`stand-in-operator`) runs at `high`: it is dispatched a handful of times per run, and each call settles several decisions the operator reviews at the end.
 
 ## Tier-assignment principles applied in this plugin
 

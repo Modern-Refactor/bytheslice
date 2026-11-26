@@ -136,7 +136,7 @@ Git: you make no git writes; only the conductor does. Return every path you touc
 <the read-only line, when Read-only is yes>
 ```
 
-- **Model tier and effort.** Copy `model:` and `effort:` from the frontmatter (a `modelTiers.<agent>` override from `bytheslice.config.json` wins). Where the host lets the dispatch pick a model or a reasoning effort, map the tier to the host's matching choice (`haiku` to its fastest tier, `sonnet` to its balanced tier, `opus` to its deepest tier) and set it. Where it does not, keep the header line, write `host default`, and note the gap in the run log.
+- **Model tier and effort.** Copy `model:` and `effort:` from the frontmatter (a `modelTiers.<agent>` override from `bytheslice.config.json` wins). Where the host lets the dispatch pick a model or a reasoning effort, map the tier to the host's matching choice (`haiku` to its fastest tier, `sonnet` to its balanced tier, `opus` to its deepest tier, `fable` to its highest-quality reasoning tier, or its deepest when it has nothing above it) and set it. Where it does not, keep the header line, write `host default`, and note the gap in the run log.
 - **Tool allowlist, normalized.** Frontmatter writes tools four ways; reduce all of them to one comma-separated list of exact tool names, trimmed, unquoted and deduplicated, with MCP tool names kept verbatim:
   - a YAML list (`tools:` followed by `- Read` lines);
   - a bracket list (`tools: [Read, Glob, Grep]`);

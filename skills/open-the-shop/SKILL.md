@@ -20,7 +20,7 @@ This skill runs in one of two modes, auto-detected at startup:
 
 Honor an explicit `--standalone` or `--sequential` flag if passed; otherwise auto-detect from disk state.
 
-**Unattended runs.** When `bytheslice.config.json` sets `run.unattended: true` (`/pizza-party` does), Phases 3 and 4 take the **provider-provisioned path** below instead of the manual checklist, and nothing waits on a human: the operator accepted that risk by launching the run. Every choice made in the operator's place is one line in the order ticket's "Decisions made without you" section (`docs/pizza-party/order.md`). Without `run.unattended`, the interactive path is unchanged.
+**Unattended runs.** When `bytheslice.config.json` sets `run.unattended: true` (`/pizza-party` does), Phases 3 and 4 take the **provider-provisioned path** below instead of the manual checklist, and nothing waits on a human: the operator accepted that risk by launching the run. Every choice made in the operator's place is one line in the order ticket (`docs/pizza-party/order.md`), recorded per `skills/pizza-party/references/decision-routing.md`: a provider or local substitute under **Decided by the team**; a paid service or one that holds user data the **Answers** did not name under **Waiting on the stand-in**, with the substitute applied as the provisional default. Without `run.unattended`, the interactive path is unchanged.
 
 ## Scripts
 

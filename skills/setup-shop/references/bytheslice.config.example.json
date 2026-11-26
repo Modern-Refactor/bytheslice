@@ -4,7 +4,7 @@
 // for the full schema and precedence rules.
 {
   // Override per-agent model tier. Omit any agent to use the plugin default.
-  // Aliases: "haiku" | "sonnet" | "opus".
+  // Aliases: "haiku" | "sonnet" | "opus" | "fable".
   "modelTiers": {
     // "implementer": "opus",
     // "codeReviewer": "opus",
@@ -67,7 +67,8 @@
 
   // Unattended runs decide, record and continue instead of asking. /pizza-party sets this.
   "run": {
-    // "unattended": false
+    // "unattended": false,
+    // "standIn": { "enabled": true, "maxDispatches": 8 }   // /pizza-party's Fable stand-in operator: off, or at most this many dispatches a run (0 to 50)
   },
 
   // Declare which MCPs the project has installed.

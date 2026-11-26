@@ -30,13 +30,13 @@ Honor an explicit `--standalone` or `--sequential` flag if passed; otherwise aut
 | `"lean"` | A line sized for a small app. CI runs lint, typecheck, unit tests, build, and ONE Playwright smoke spec (`@smoke`) over the app's main flow. No visual baselines, no `@visual` or `@regression-core` suite, no `e2e.yml`, no `e2e-coverage.yml`. `design-system-compliance.yml` and sub-block E's lint additions stay only when a design system exists (`docs/design-system.md` is present, or the Prep row for Slice 1.1 is `[x]`). The husky `pre-push` hook runs the same lean set. |
 | `"auto"` | Resolves to `lean` when the master checklist has at most 3 feature pies (Pie 2 onward) and no payments work (no pie or slice about payments, checkout, billing or subscriptions, and no payments provider in PRD Section 4 or any `.env.example`); otherwise `standard`. With no master checklist (standalone mode) it resolves to `standard`. `/pizza-party` sets `auto`. |
 
-Log the resolved tier as one line (for example `quality tier: lean (auto: 2 feature pies, no payments)`). When `docs/pizza-party/order.md` exists, append the same line to its "Decisions made without you" section.
+Log the resolved tier as one line (for example `quality tier: lean (auto: 2 feature pies, no payments)`). When `docs/pizza-party/order.md` exists, append the same line under its **Decided by the team** section.
 
 The lean templates live beside the standard ones in [references/scaffold-artifact-templates.md](references/scaffold-artifact-templates.md) under "Lean tier". Lean never drops lint, typecheck, unit tests, build or the smoke spec; it only leaves out the suites a small app does not need.
 
 ## Unattended runs (`run.unattended: true`)
 
-When `bytheslice.config.json` sets `run.unattended: true` (`/pizza-party` does), nothing in this skill waits on a human: the operator accepted that risk by launching the run. The order ticket is `docs/pizza-party/order.md`; every choice made in the operator's place is appended to its "Decisions made without you" section as one line (the point, the option taken, why).
+When `bytheslice.config.json` sets `run.unattended: true` (`/pizza-party` does), nothing in this skill waits on a human: the operator accepted that risk by launching the run. The order ticket is `docs/pizza-party/order.md`; every choice made in the operator's place is one line (the point, the option taken, why) recorded per `skills/pizza-party/references/decision-routing.md`: these are all technical, so under **Decided by the team**.
 
 - **Phase 1** asks nothing. Each question takes its recommended answer, recorded in the ticket.
 - **Every point that would ask or return `needs_human`** takes the safest working option instead and continues: a custom or legacy full-chain `.husky/pre-push`, a conflicting existing workflow, an existing `scripts/setup-branch-protection.sh`, a non-empty `.stylelintrc.json`, user-edited content between the rules-file markers, or a project with no ESLint config. Keep the existing file untouched, skip the artifact that would overwrite it, and record the skip. A `framework: unknown` profile is treated as a Node app with E2E skipped, and recorded.
@@ -121,7 +121,7 @@ Before any write, switch to **Plan Mode** and ask up to 5 focused questions:
 
 **Always provide a recommended answer in available options.**
 
-Wait for answers before continuing. Under `run.unattended: true`, skip the prompt: take each recommended answer and record it in the order ticket's "Decisions made without you" section (see "Unattended runs").
+Wait for answers before continuing. Under `run.unattended: true`, skip the prompt: take each recommended answer and record it under the order ticket's **Decided by the team** (see "Unattended runs").
 
 ### Phase 2: Branch Setup
 
@@ -290,7 +290,7 @@ If the repo already has the baseline, stop and recommend `/bytheslice:sell-slice
 
 Run this checklist at the end of every run. Do **not** consider the scaffold "done" until every box is `[x]`.
 
-Sections 1 to 6 below describe the **standard tier** with the default PR delivery. Under the **lean tier**, walk "Lean tier rows" in place of sections 1 to 3; under **ship-once**, walk "Ship-once rows" in place of sections 4 to 6. Section 3.5 applies to every combination. An artifact or prompt skipped under `run.unattended: true` counts as checked once its line is in the order ticket's "Decisions made without you" section.
+Sections 1 to 6 below describe the **standard tier** with the default PR delivery. Under the **lean tier**, walk "Lean tier rows" in place of sections 1 to 3; under **ship-once**, walk "Ship-once rows" in place of sections 4 to 6. Section 3.5 applies to every combination. An artifact or prompt skipped under `run.unattended: true` counts as checked once its line is in the order ticket's **Decided by the team** section (or, on a pre-7.2.0 ticket, "Decisions made without you").
 
 ### Lean tier rows
 

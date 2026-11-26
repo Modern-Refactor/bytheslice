@@ -4,10 +4,10 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Timer, ToolCallResult } from 'claude-code'
 
-import { appendRow } from './ledger.ts'
+import { appendRow, primaryRoot } from './ledger.ts'
 import type { LedgerRow } from './ledger.ts'
 import { refreshLedger } from './live.ts'
-import { DEFAULT_POLICY, loadPolicy } from './policy.ts'
+import { DEFAULT_POLICY, loadPolicy, readConfigText, unattendedFrom } from './policy.ts'
 import type { PassPolicy, PassWarning } from './types'
 
 const checklistAtom = atom({ plugin: 'bytheslice', key: 'pass.checklist' } as const, null)
@@ -18,6 +18,7 @@ const skillAtom = atom({ plugin: 'bytheslice', key: 'pass.activeSkill' } as cons
 const policyAtom = atom({ plugin: 'bytheslice', key: 'pass.policy' } as const, null)
 const reportedAtom = atom({ plugin: 'bytheslice', key: 'pass.reported' } as const, {})
 const warningAtom = atom({ plugin: 'bytheslice', key: 'pass.warning' } as const, null)
+const unattendedAtom = atom({ plugin: 'bytheslice', key: 'pass.unattended' } as const, null)
 
 /** One thing a check noticed. `key` names the instance: the same code and key report once a minute. */
 export type Finding = { code: string; text: string; slice?: string; key: string }
@@ -93,6 +94,35 @@ async function nowOf($: EngineInterface): Promise<number> {
     return Date.now()
   }
 }
+
+/** How long one read of `run.unattended` is kept before the config is read again. */
+export const UNATTENDED_CACHE_MS = 30000
+
+/**
+ * Whether this run is unattended (`run.unattended: true` in
+ * bytheslice.config.json, which /pizza-party writes in its Phase 2, after the
+ * session started, so the session-start policy read cannot carry it). Read
+ * only when the Pass is about to ask the operator something: the session's
+ * directory, else the primary checkout, the answer kept 30 seconds in an atom.
+ * Never throws; false when nothing says so.
+ */
+export async function isUnattended($: EngineInterface): Promise<boolean> {
+  const now = await nowOf($)
+  const kept = await read($, unattendedAtom).catch(() => null)
+  if (kept && now - kept.t < UNATTENDED_CACHE_MS) return kept.on
+  let text = await readConfigText($)
+  if (text === null) {
+    const root = await primaryRoot($).catch(() => null)
+    if (root !== null) text = await readConfigText($, root)
+  }
+  const on = unattendedFrom(text)
+  await update($, unattendedAtom, () => ({ t: now, on })).catch(() => undefined)
+  return on
+}
+
+/** The line every unattended hidden note ends with: where the routing rule lives. */
+export const UNATTENDED_ROUTING =
+  'This run is unattended (run.unattended): do not ask in chat; route it per skills/pizza-party/references/decision-routing.md (the unattended defer rule) and record the outcome in the order ticket.'
 
 /**
  * The policy when checks run: null while the engine is limited, while there is

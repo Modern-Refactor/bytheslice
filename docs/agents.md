@@ -2,7 +2,7 @@
 
 # 🍕 Agent Roster
 
-Every ByTheSlice subagent in one table, in plain English. ByTheSlice ships 28 subagents, and every one is a registered plugin agent: type `@bytheslice:<name>` in any Claude Code session to aim one at something directly, or just run the skills and let them dispatch. Registration means each agent's model tier, effort level, and tool allowlist (when its file declares one; an agent without a `tools:` list gets every tool) are enforced by the platform, not just suggested.
+Every ByTheSlice subagent in one table, in plain English. ByTheSlice ships 29 subagents, and every one is a registered plugin agent: type `@bytheslice:<name>` in any Claude Code session to aim one at something directly, or just run the skills and let them dispatch. Registration means each agent's model tier, effort level, and tool allowlist (when its file declares one; an agent without a `tools:` list gets every tool) are enforced by the platform, not just suggested.
 
 Bold rows mark the skill each group of agents belongs to.
 
@@ -51,6 +51,8 @@ Bold rows mark the skill each group of agents belongs to.
 | `platform-walker` | Wally | Drives a real browser through every route of your running app, screenshots everything, reads the console, and returns a ranked list of what looks broken, stubbed, or empty. |
 | **🍕 /special-order** | | |
 | `code-explorer`, `stage-planner`, `phased-plan-writer` | Pip, Stan, Phil | No agents of its own: it dispatches these three, in their `feature-trace`, `extend` / `options` and incremental modes (described under /sell-slice and /cook-pizzas above). |
+| **🍕 /pizza-party** | | |
+| `stand-in-operator` | (none) | Stands in for you during an unattended `/pizza-party` run. When a business question comes up that your interview answers did not settle (a feature cut, who may see what, what data to keep), it decides it the way you would, picking the choice that is cheapest to undo and shipping anything with outside exposure switched off, and the run lists every such call at the end with how to change it. It runs on the top `fable` tier but is called rarely: only for those questions, a batch at a time, with a per-run budget. Read-only; it never asks you, never approves deleting anything shared, and never makes up a credential. |
 | **🍕 /close-shop** | | |
 | `retrospective-reviewer` | Rhea | Reads the project's history (logs, commits, PRs, escalations, and the Pass ledger's metrics when the mod ran) and identifies recurring friction the plugin itself caused, then proposes a patch for each improvement. Barred from modifying /close-shop itself. |
 
